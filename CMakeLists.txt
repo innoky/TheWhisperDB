@@ -4,18 +4,27 @@ project(CrowExample)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Установка пути к vcpkg, если нужно
+# Подключаем vcpkg toolchain (если есть)
+
 if(DEFINED ENV{VCPKG_ROOT})
-    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-        CACHE STRING "")
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
 endif()
 
-add_executable(server src/main.cpp)
+# Добавляем исполняемый файл
+add_executable(server
+    src/main.cpp
+    src/core/GraphDB.cpp
+    src/core/GNode.cpp
+)
+target_compile_options(server PRIVATE -fcoroutines)
+# Подключаем pthread
+find_package(Threads REQUIRED)
+target_link_libraries(server PRIVATE Threads::Threads)
 
-# Указываем путь к Crow через vcpkg
+# Указываем компилятору, где искать заголовки Crow
+# Crow — это header-only библиотека, и достаточно include-пути
 target_include_directories(server PRIVATE
     $ENV{VCPKG_ROOT}/installed/x64-linux/include
+    ${CMAKE_SOURCE_DIR}/include  
+    /usr/local/include  
 )
-
-# Crow не требует отдельной линковки, но нужен pthread
-target_link_libraries(server PRIVATE pthread)

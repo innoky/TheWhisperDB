@@ -1,0 +1,19 @@
+{
+    "nodes": [
+        {
+            "description": "/tmp/node_a",
+            "id": 1,
+            "title": "NodeA"
+        },
+        {
+            "description": "/tmp/node_b",
+            "id": 2,
+            "title": "NodeB"
+        },
+        {
+            "description": "/tmp/node_c",
+            "id": 3,
+            "title": "NodeC"
+        }
+    ]
+}
