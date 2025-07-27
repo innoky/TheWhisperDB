@@ -21,19 +21,29 @@ void GraphDB::initGraphDB()
     else createJson();
 }
 
+Node GraphDB::find(int id) const
+{
+    auto it = nodes.find(id);
+    if (it != nodes.end()) {
+        return *(it->second);
+    } else {
+        throw std::runtime_error("Node not found");
+    }
+}
+
 std::string GraphDB::serialize() const
 {
     std::vector<nlohmann::json> nodes_json;
-        nodes_json.reserve(nodes.size());
+    nodes_json.reserve(nodes.size());
 
-        for (const auto& node : nodes) {
-            nodes_json.push_back(node->to_json());
-        }
+    for (const auto& node_pair : nodes) {
+        nodes_json.push_back(node_pair.second->to_json());
+    }
 
-        nlohmann::json j;
-        j["nodes"] = nodes_json;
+    nlohmann::json j;
+    j["nodes"] = nodes_json;
 
-        return j.dump();
+    return j.dump();
 }
 
 void GraphDB::loadFromJson()
@@ -48,7 +58,7 @@ void GraphDB::loadFromJson()
             return;
         }
         for (const auto& node_json : j["nodes"]) {
-            nodes.push_back(new Node(node_json));
+            nodes.emplace(node_json["id"].get<int>(), new Node(node_json));
         }
     } catch (const nlohmann::json::parse_error& e) {
         // обработка ошибки парсинга
@@ -71,11 +81,9 @@ void GraphDB::saveToJson()
     nlohmann::json j;
     j["nodes"] = nlohmann::json::array();
 
-    for (auto node : this->nodes)
-    {
-        j["nodes"].push_back(node->to_json()); 
+    for (const auto& node_pair : nodes) {
+        j["nodes"].push_back(node_pair.second->to_json());
     }
-
     std::ofstream file(DB_FILE_PATH);
     file << j.dump(4);
 }

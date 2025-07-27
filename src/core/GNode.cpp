@@ -13,8 +13,14 @@ nlohmann::json Node::to_json() const {
     return {
         {"id", id},
         {"title", title},
+        {"course", course},
+        {"subject", subject},
         {"description", description},
-       
+        {"author", author},
+        {"date", date},
+        {"tags", tags},
+        {"storage_path", storage_path},
+        {"LinkedNodes", LinkedNodes}
     };
 }
 

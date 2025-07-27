@@ -1,19 +1,52 @@
 {
     "nodes": [
         {
-            "description": "/tmp/node_a",
-            "id": 1,
-            "title": "NodeA"
+            "LinkedNodes": [],
+            "author": "",
+            "course": 0,
+            "date": "",
+            "description": "A course on design patterns in C++.",
+            "id": 4,
+            "storage_path": "",
+            "subject": "",
+            "tags": "",
+            "title": "C++ Design Patterns"
         },
         {
-            "description": "/tmp/node_b",
-            "id": 2,
-            "title": "NodeB"
-        },
-        {
-            "description": "/tmp/node_c",
+            "LinkedNodes": [],
+            "author": "",
+            "course": 0,
+            "date": "",
+            "description": "A course on data structures implemented in C++.",
             "id": 3,
-            "title": "NodeC"
+            "storage_path": "",
+            "subject": "",
+            "tags": "",
+            "title": "C++ Data Structures"
+        },
+        {
+            "LinkedNodes": [],
+            "author": "",
+            "course": 0,
+            "date": "",
+            "description": "A course on advanced techniques in C++.",
+            "id": 2,
+            "storage_path": "",
+            "subject": "",
+            "tags": "",
+            "title": "Advanced C++ Techniques"
+        },
+        {
+            "LinkedNodes": [],
+            "author": "",
+            "course": 0,
+            "date": "",
+            "description": "An introductory course on C++ programming.",
+            "id": 1,
+            "storage_path": "",
+            "subject": "",
+            "tags": "",
+            "title": "Introduction to C++"
         }
     ]
 }
