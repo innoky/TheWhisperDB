@@ -61,7 +61,7 @@ void GraphDB::loadFromJson()
             nodes.emplace(node_json["id"].get<int>(), new Node(node_json));
         }
     } catch (const nlohmann::json::parse_error& e) {
-        // обработка ошибки парсинга
+
         std::cerr << "JSON parse error: " << e.what() << std::endl;
         createJson();
     }

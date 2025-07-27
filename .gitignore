@@ -30,3 +30,4 @@ Thumbs.db
 vcpkg_installed/
 installed/
 packages/
+data/
