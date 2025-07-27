@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/kzs/CPP/WGEngine/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
