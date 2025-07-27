@@ -1,3 +1,0 @@
-/home/kzs/CPP/WGEngine/build/CMakeFiles/server.dir
-/home/kzs/CPP/WGEngine/build/CMakeFiles/edit_cache.dir
-/home/kzs/CPP/WGEngine/build/CMakeFiles/rebuild_cache.dir
