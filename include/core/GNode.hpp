@@ -9,11 +9,17 @@ class Node
 public:
     // Nodes of knowlage data (each node is a lecture, conspect, etc.)
     
+    Node(const nlohmann::json& json, int id);
     Node(const nlohmann::json& json);
-    Node(int id, std::string name); 
-
+   
+    
     std::string to_str();
     nlohmann::json to_json() const;
+
+    // Getters
+    int getId() const { return id; }
+    std::string getTitle() const { return title; }
+
 
 private:
     int id; // Unique identifier for the node
