@@ -1,45 +1,64 @@
-#include <crow.h>
-#include "core/GraphDB.hpp"
 #include <iostream>
 #include <string>   
 #include <coroutine> 
 #include <asio.hpp>
+#include <csignal>
+#include <atomic>
+
+#include "core/GraphDB.hpp"
+#include "server/wserver.hpp"
+#include "server/endpoint.hpp"
+#include "const/rest_enums.hpp"
+
+
+std::shared_ptr<GraphDB> db;
+
+
+void signal_handler(int signum) {
+    if (signum == SIGINT) {
+        std::cout << "\nSIGINT received, saving database..." << std::endl;
+        if (db) {
+            db->saveToJson();
+        }
+        std::exit(0);  
+    }
+}
 
 int main()
 {
-    crow::SimpleApp app; 
-    auto db = std::make_shared<GraphDB>(); 
+    db = std::make_shared<GraphDB>();
+    std::signal(SIGINT, signal_handler);
 
-    // Define routes
-
-    // dump the database content
-    CROW_ROUTE(app, "/dump")
-    ([db]() -> crow::response {
-        auto json_str = db->serialize();
-        return crow::response(json_str);});
-
-    // Get a node by ID
-    CROW_ROUTE(app, "/get/<int>")
-    ([db](int id) -> crow::response {
-        try {
-            Node node = db->find(id);
-            return crow::response(node.to_json().dump());
-        } catch (const std::runtime_error& e) {
-            return crow::response(404, e.what());
-        }});
-
-
-    // Add a new node
-    CROW_ROUTE(app, "/add").methods(crow::HTTPMethod::Post)
-    ([db](const crow::request& req) -> crow::response {
-        try {
-            auto json = nlohmann::json::parse(req.body);
-            db->addNode(json);
-            return crow::response(201, "Node added successfully");
-        } catch (const std::exception& e) {
-            return crow::response(400, e.what());
-        }
-    });
+    auto server = std::make_shared<wServer>();
     
-    app.port(8080).run();
+    endpoint dump_ep(
+        [](const std::string& body) 
+        {
+        auto json_str = db->serialize();
+        return json_str;
+        }, 
+        HttpRequest::GET, 
+        "/dump");
+    server->add_endpoint(dump_ep);
+
+    endpoint add_node(
+        [](const std::string& body) -> std::string
+        {
+            std::cout << "Received body: " << body << std::endl;
+            try{
+
+                auto json = nlohmann::json::parse(body);
+                db->addNode(json);
+                return "Node added successfully";
+            }
+            catch(const std::exception& e){
+                std::cerr << e.what() << '\n';
+                return "Error adding node";
+            }
+        },
+        HttpRequest::POST,
+        "/add_node");
+    server->add_endpoint(add_node);
+
+    server->run(8080);
 }
