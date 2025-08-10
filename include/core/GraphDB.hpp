@@ -18,12 +18,14 @@ public:
     void sizeDownOne() { size--; }
     void setSize(int new_size) { size = new_size; }
 
+    void saveToJson();
+    
 private:
     std::unordered_map<int, Node*> nodes; // Map of nodes by their unique ID
     int size;
     void initGraphDB();
     void createJson();
     void loadFromJson();
-    void saveToJson();
+    
 
 };
