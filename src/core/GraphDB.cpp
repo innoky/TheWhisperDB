@@ -73,14 +73,17 @@ void GraphDB::loadFromJson()
 
 void GraphDB::createJson() {
     nodes.clear();
+    this->setSize(0);
     std::ofstream file(DB_FILE_PATH);
     nlohmann::json j;
     j["nodes"] = nlohmann::json::array();
+    j["size"] = getSize();
     file << j.dump(4);
 }
 
 void GraphDB::saveToJson()
 {
+    std::cout << "Saving to JSON file: " << DB_FILE_PATH << std::endl;
     std::ofstream file(DB_FILE_PATH);
     if (!file.is_open()) {
         std::cerr << "Failed to open file for writing: " << DB_FILE_PATH << std::endl;
@@ -91,29 +94,23 @@ void GraphDB::saveToJson()
     j["nodes"] = nlohmann::json::array();
     j["size"] = getSize();
 
-    // Копируем пары в вектор для сортировки по ключу (id)
     std::vector<std::pair<int, Node*>> sorted_nodes(nodes.begin(), nodes.end());
 
-    // Сортируем по id (ключу)
     std::sort(sorted_nodes.begin(), sorted_nodes.end(),
               [](const auto& a, const auto& b) {
                   return a.first < b.first;
               });
 
-    // Записываем узлы в порядке возрастания id
     for (const auto& node_pair : sorted_nodes) {
         j["nodes"].push_back(node_pair.second->to_json());
     }
-
+ 
     file << j.dump(4);
 }
 
-
-
-
 void GraphDB::addNode(nlohmann::json& j)
 {
-    int id = this->getSize() + 1; // Generate a new ID based on current size
+    int id = this->getSize() + 1; 
     if (nodes.find(id) != nodes.end()) {
         throw std::runtime_error("Node with this ID already exists");
     }
