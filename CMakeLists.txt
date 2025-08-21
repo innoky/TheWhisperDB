@@ -9,6 +9,9 @@ add_executable(server
     src/core/GraphDB.cpp
     src/core/GNode.cpp
     src/server/wserver.cpp
+    src/server/upload_handler.cpp
+    src/server/FileStorage.cpp
+    src/server/UploadHandler.cpp
 )
 
 target_compile_options(server PRIVATE -fcoroutines)
