@@ -6,7 +6,7 @@
 
 wServer::wServer(): acceptor_(io_context_){}
 
-
+using boost::asio::ip::tcp; 
 
 void wServer::add_endpoint(const endpoint& ep)
 {
@@ -129,8 +129,8 @@ extract_multipart_parts(const std::string& body, const std::string& boundary_par
 
 void wServer::run(uint16_t port)
 {
-    tcp::endpoint endpoint(tcp::v4(), port);
-    acceptor_ = tcp::acceptor(io_context_, endpoint);
+    boost::asio::ip::tcp::endpoint endpoint(tcp::v4(), port);
+    acceptor_ = boost::asio::ip::tcp::acceptor(io_context_, endpoint);
     std::cout << "Server listening on port " << port << std::endl;
 
     auto trim = [](std::string& s) {
@@ -197,9 +197,9 @@ void wServer::run(uint16_t port)
         tcp::socket socket(io_context_);
         acceptor_.accept(socket);
 
-        asio::streambuf buf;
+        boost::asio::streambuf buf;
        
-        asio::read_until(socket, buf, "\r\n\r\n");
+        boost::asio::read_until(socket, buf, "\r\n\r\n");
         std::istream request_stream(&buf);
 
         std::string method, path, version;
@@ -303,7 +303,7 @@ void wServer::run(uint16_t port)
             if (body.size() < content_length) {
                 std::string rest;
                 rest.resize(content_length - body.size());
-                asio::read(socket, asio::buffer(&rest[0], rest.size()));
+                boost::asio::read(socket, boost::asio::buffer(&rest[0], rest.size()));
                 body += rest;
             } else if (body.size() > content_length) {
               
@@ -373,7 +373,7 @@ void wServer::run(uint16_t port)
             response << "Connection: close\r\n\r\n";
             response << response_body;
 
-            asio::write(socket, asio::buffer(response.str()));
+            boost::asio::write(socket, boost::asio::buffer(response.str()));
             socket.close();
         }
     }

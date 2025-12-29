@@ -1,8 +1,12 @@
-cmake_minimum_required(VERSION 3.14)
-project(whisperdb)
+cmake_minimum_required(VERSION 3.20)
+cmake_policy(SET CMP0167 NEW)
+
+project(whisperdb LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+find_package(Boost CONFIG REQUIRED)
 
 add_executable(server
     src/main.cpp
@@ -13,13 +17,10 @@ add_executable(server
     src/server/FileStorage.cpp
     src/server/UploadHandler.cpp
 )
-
-target_compile_options(server PRIVATE -fcoroutines)
-find_package(Threads REQUIRED)
-target_link_libraries(server PRIVATE Threads::Threads)
-
-target_include_directories(server PRIVATE 
-    /usr/include
-    ${CMAKE_SOURCE_DIR}/include
-    )
+target_include_directories(server PRIVATE ${CMAKE_SOURCE_DIR}/include )
+target_compile_options(server PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+)
 
