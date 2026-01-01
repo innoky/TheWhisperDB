@@ -1,131 +1,21 @@
 #include "server/wserver.hpp"
 #include "server/endpoint.hpp"
+#include "http/MultipartParser.hpp"
 #include <unordered_map>
 #include <sstream>
 #include <cctype>
 
-wServer::wServer(): acceptor_(io_context_){}
+using whisperdb::http::MultipartParser;
+using whisperdb::http::MultipartPart;
 
-using boost::asio::ip::tcp; 
+wServer::wServer(): acceptor_(io_context_) {}
+
+using boost::asio::ip::tcp;
 
 void wServer::add_endpoint(const endpoint& ep)
 {
     handlers_.insert_or_assign(ep.get_path(), ep);
 }
-
-#include <string>
-#include <vector>
-
-static std::vector<std::string>
-extract_multipart_parts(const std::string& body, const std::string& boundary_param)
-{
-    std::vector<std::string> parts;
-    if (boundary_param.empty()) return parts;
-
-    const std::string dash = "--" + boundary_param;
-
-    // Find the first boundary line (at start or after CRLF)
-    size_t bline;
-    if (body.rfind(dash, 0) == 0) {
-        bline = 0;
-    } else {
-        size_t m = body.find("\r\n" + dash, 0);
-        if (m == std::string::npos) return parts;
-        bline = m + 2; // position at boundary start
-    }
-
-    auto trim = [](std::string& s) {
-        size_t a = 0, b = s.size();
-        while (a < b && (s[a] == ' ' || s[a] == '\t')) ++a;
-        while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t' || s[b - 1] == '\r' || s[b - 1] == '\n')) --b;
-        s = s.substr(a, b - a);
-    };
-
-    for (;;) {
-        // Boundary line ends with CRLF
-        size_t line_end = body.find("\r\n", bline);
-        if (line_end == std::string::npos) break;
-
-        const size_t after = bline + dash.size();
-        const bool is_final = (after + 2 <= body.size() && body.compare(after, 2, "--") == 0);
-        if (is_final) break; // reached final boundary
-
-        size_t headers_start = line_end + 2;
-        size_t headers_end = body.find("\r\n\r\n", headers_start);
-        if (headers_end == std::string::npos) break;
-
-        // Parse headers for this part
-        std::string name, filename, part_ctype;
-        size_t hpos = headers_start;
-        while (hpos < headers_end) {
-            size_t eol = body.find("\r\n", hpos);
-            if (eol == std::string::npos || eol > headers_end) break;
-            std::string hline = body.substr(hpos, eol - hpos);
-            hpos = eol + 2;
-            // Split name: value
-            auto colon = hline.find(':');
-            if (colon == std::string::npos) continue;
-            std::string hname = hline.substr(0, colon);
-            std::string hvalue = hline.substr(colon + 1);
-            trim(hname); trim(hvalue);
-
-            std::string hname_lc = hname;
-            for (auto& c : hname_lc) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-
-            if (hname_lc == "content-disposition") {
-                // Example: form-data; name="field"; filename="file.txt"
-                std::string v = hvalue;
-                // parameters separated by ';'
-                size_t sc = 0;
-                while (sc != std::string::npos) {
-                    size_t next = v.find(';', sc);
-                    std::string token = v.substr(sc, (next == std::string::npos ? v.size() : next) - sc);
-                    sc = (next == std::string::npos ? std::string::npos : next + 1);
-                    trim(token);
-                    if (token.empty()) continue;
-                    auto eq = token.find('=');
-                    if (eq == std::string::npos) continue;
-                    std::string k = token.substr(0, eq);
-                    std::string val = token.substr(eq + 1);
-                    trim(k); trim(val);
-                    for (auto& c : k) c = static_cast<char>(
-                        std::tolower(static_cast<unsigned char>(c)));
-                    if (!val.empty() && val.front() == '"' && val.back() == '"') {
-                        val = val.substr(1, val.size() - 2);
-                    }
-                    if (k == "name") name = val;
-                    else if (k == "filename") filename = val;
-                }
-            } else if (hname_lc == "content-type") {
-                part_ctype = hvalue;
-                trim(part_ctype);
-            }
-        }
-
-        size_t content_start = headers_end + 4;
-        size_t next_marker = body.find("\r\n" + dash, content_start);
-
-        // Determine content end
-        size_t content_end = (next_marker == std::string::npos) ? body.size() : next_marker;
-
-        std::string content = body.substr(content_start, content_end - content_start);
-
-        // Build a simple meta+content block:
-        // name: <name>\nfilename: <filename>\ncontent-type: <part_ctype>\n\n<raw content>
-        std::string meta;
-        meta += "name: " + name + "\n";
-        meta += "filename: " + filename + "\n";
-        meta += "content-type: " + part_ctype + "\n\n";
-        parts.emplace_back(meta + content);
-
-        if (next_marker == std::string::npos) break;
-        // Move bline to start of found boundary (skip CRLF)
-        bline = next_marker + 2;
-    }
-
-    return parts;
-}
-
 
 void wServer::run(uint16_t port)
 {
@@ -139,10 +29,12 @@ void wServer::run(uint16_t port)
         while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t' || s[b - 1] == '\r' || s[b - 1] == '\n')) --b;
         s = s.substr(a, b - a);
     };
+
     auto tolower_inplace = [](std::string& s) {
         for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     };
-    auto starts_with_icase = [&](const std::string& s, const std::string& p) {
+
+    auto starts_with_icase = [](const std::string& s, const std::string& p) {
         if (s.size() < p.size()) return false;
         for (size_t i = 0; i < p.size(); ++i) {
             char a = static_cast<char>(std::tolower(static_cast<unsigned char>(s[i])));
@@ -151,6 +43,7 @@ void wServer::run(uint16_t port)
         }
         return true;
     };
+
     auto status_text = [](int s) {
         switch (s) {
             case 200: return "OK";
@@ -164,41 +57,12 @@ void wServer::run(uint16_t port)
         }
     };
 
-    auto count_multipart_parts = [](const std::string& body, const std::string& boundary) -> size_t {
-        if (boundary.empty()) return 0;
-        const std::string dash = "--" + boundary;
-        size_t pos = 0;
-        size_t first = body.find(dash, pos);
-        if (first == std::string::npos) return 0;
-        pos = first + dash.size();
-
-        if (pos + 2 <= body.size() && body.compare(pos, 2, "--") == 0) return 0;
-   
-        if (pos + 2 <= body.size() && body.compare(pos, 2, "\r\n") == 0) pos += 2;
-
-        size_t count = 0;
-        while (true) {
-         
-            const std::string marker = "\r\n" + dash;
-            size_t next = body.find(marker, pos);
-            if (next == std::string::npos) break; 
-            ++count;
-            pos = next + marker.size();
-           
-            if (pos + 2 <= body.size() && body.compare(pos, 2, "--") == 0) break;
-          
-            if (pos + 2 <= body.size() && body.compare(pos, 2, "\r\n") == 0) pos += 2;
-        }
-        return count;
-    };
-
     while (true)
     {
         tcp::socket socket(io_context_);
         acceptor_.accept(socket);
 
         boost::asio::streambuf buf;
-       
         boost::asio::read_until(socket, buf, "\r\n\r\n");
         std::istream request_stream(&buf);
 
@@ -208,7 +72,6 @@ void wServer::run(uint16_t port)
         std::string dummy;
         std::getline(request_stream, dummy);
 
-       
         std::string clean_path = path;
         if (!path.empty()) {
             auto qm = path.find('?');
@@ -226,8 +89,7 @@ void wServer::run(uint16_t port)
         std::string header_line;
         size_t content_length = 0;
         bool has_content_length = false;
-        std::string media_type;     
-        std::string boundary_param; 
+        std::string content_type_header;
 
         while (std::getline(request_stream, header_line) && header_line != "\r")
         {
@@ -252,72 +114,36 @@ void wServer::run(uint16_t port)
                     has_content_length = false;
                 }
             } else if (name_lc == "content-type") {
-              
-                std::string v = value;
-                trim(v);
-                // отделяем до ';'
-                std::string mt = v;
-                auto sc = v.find(';');
-                if (sc != std::string::npos) mt = v.substr(0, sc);
-                trim(mt);
-                media_type = mt;
-
-               
-                if (sc != std::string::npos) {
-                    std::string params = v.substr(sc + 1);
-                    
-                    while (!params.empty()) {
-                        auto sc2 = params.find(';');
-                        std::string token = (sc2 == std::string::npos) ? params : params.substr(0, sc2);
-                        params = (sc2 == std::string::npos) ? "" : params.substr(sc2 + 1);
-                        trim(token);
-                        if (token.empty()) continue;
-                        auto eq = token.find('=');
-                        if (eq == std::string::npos) continue;
-                        std::string k = token.substr(0, eq);
-                        std::string v2 = token.substr(eq + 1);
-                        trim(k); trim(v2);
-                        tolower_inplace(k);
-                        if (!v2.empty() && v2.front() == '"' && v2.back() == '"') {
-                            v2 = v2.substr(1, v2.size() - 2);
-                        }
-                        if (k == "boundary") boundary_param = v2;
-                    }
-                }
+                content_type_header = value;
             }
         }
 
         std::string body;
         {
-            
             std::string already(std::istreambuf_iterator<char>(request_stream), {});
             body.swap(already);
         }
 
         const size_t MAX_BODY_SIZE = 10 * 1024 * 1024; // 10 MB
         if (has_content_length) {
-            if (content_length > MAX_BODY_SIZE) {
-                // Too large, but still need to drain the socket input already buffered
-                // We will not read further content for simplicity and respond with 413
-            }
             if (body.size() < content_length) {
                 std::string rest;
                 rest.resize(content_length - body.size());
                 boost::asio::read(socket, boost::asio::buffer(&rest[0], rest.size()));
                 body += rest;
             } else if (body.size() > content_length) {
-              
                 body.resize(content_length);
             }
         }
-            
-        if (starts_with_icase(media_type, "multipart/form-data")) {
-            if (!boundary_param.empty()) {
-                size_t parts_count = count_multipart_parts(body, boundary_param);
-                std::cout << "Multipart parts count: " << parts_count << std::endl;
-            } else {
-                std::cout << "Multipart without boundary: bad request" << std::endl;
-            }
+
+        // Extract media type and boundary using MultipartParser
+        std::string media_type;
+        std::string boundary;
+        {
+            auto sc = content_type_header.find(';');
+            media_type = (sc != std::string::npos) ? content_type_header.substr(0, sc) : content_type_header;
+            trim(media_type);
+            boundary = MultipartParser::extractBoundary(content_type_header);
         }
 
         int status = 200;
@@ -335,46 +161,51 @@ void wServer::run(uint16_t port)
         else if (it == handlers_.end()) {
             status = 404;
             response_body = "Not Found";
-        } 
+        }
         else if (it->second.get_rest_type() != req_type) {
             status = 405;
             response_body = "Method Not Allowed";
-        } 
+        }
         else {
-            try{
-                std::vector<std::string> parts;
+            try {
+                std::vector<MultipartPart> parts;
+
                 if (starts_with_icase(media_type, "multipart/form-data")) {
-                    if (boundary_param.empty()) {
+                    if (boundary.empty()) {
                         status = 400;
                         response_body = "Bad Request: missing multipart boundary";
                     } else {
-                        parts = extract_multipart_parts(body, boundary_param);
+                        parts = MultipartParser::parse(body, boundary);
                         response_body = it->second.get_handler()(parts);
                     }
                 } else {
-                    // Non-multipart: pass whole body as a single block
-                    parts.emplace_back(body);
+                    // Non-multipart: create single part with raw body
+                    MultipartPart single_part;
+                    single_part.name = "body";
+                    single_part.content_type = media_type;
+                    single_part.data = std::vector<uint8_t>(body.begin(), body.end());
+                    parts.push_back(std::move(single_part));
                     response_body = it->second.get_handler()(parts);
                 }
-            } 
+            }
             catch (const std::exception& e) {
                 status = 400;
                 response_body = std::string("Bad Request: ") + e.what();
-            } 
+            }
             catch (...) {
                 status = 400;
                 response_body = "Bad Request";
             }
-
-            std::ostringstream response;
-            response << "HTTP/1.1 " << status << " " << status_text(status) << "\r\n";
-            response << "Content-Length: " << response_body.size() << "\r\n";
-            response << "Content-Type: text/plain\r\n";
-            response << "Connection: close\r\n\r\n";
-            response << response_body;
-
-            boost::asio::write(socket, boost::asio::buffer(response.str()));
-            socket.close();
         }
+
+        std::ostringstream response;
+        response << "HTTP/1.1 " << status << " " << status_text(status) << "\r\n";
+        response << "Content-Length: " << response_body.size() << "\r\n";
+        response << "Content-Type: text/plain\r\n";
+        response << "Connection: close\r\n\r\n";
+        response << response_body;
+
+        boost::asio::write(socket, boost::asio::buffer(response.str()));
+        socket.close();
     }
 }

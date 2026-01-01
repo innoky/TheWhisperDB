@@ -12,15 +12,16 @@ add_executable(server
     src/main.cpp
     src/core/GraphDB.cpp
     src/core/GNode.cpp
+    src/http/MultipartParser.cpp
     src/server/wserver.cpp
-    src/server/upload_handler.cpp
     src/server/FileStorage.cpp
     src/server/UploadHandler.cpp
 )
-target_include_directories(server PRIVATE ${CMAKE_SOURCE_DIR}/include )
+
+target_include_directories(server PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
 target_compile_options(server PRIVATE
     -Wall
     -Wextra
     -Wpedantic
 )
-
