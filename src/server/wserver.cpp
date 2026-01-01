@@ -1,12 +1,15 @@
 #include "server/wserver.hpp"
 #include "server/endpoint.hpp"
 #include "http/MultipartParser.hpp"
-#include <unordered_map>
+#include "http/Request.hpp"
 #include <sstream>
 #include <cctype>
+#include <algorithm>
 
 using whisperdb::http::MultipartParser;
 using whisperdb::http::MultipartPart;
+using whisperdb::http::Request;
+using whisperdb::http::Response;
 
 wServer::wServer(): acceptor_(io_context_) {}
 
@@ -14,13 +17,59 @@ using boost::asio::ip::tcp;
 
 void wServer::add_endpoint(const endpoint& ep)
 {
-    handlers_.insert_or_assign(ep.get_path(), ep);
+    endpoints_.push_back(ep);
+}
+
+std::string wServer::urlDecode(const std::string& str) {
+    std::string result;
+    result.reserve(str.size());
+
+    for (size_t i = 0; i < str.size(); ++i) {
+        if (str[i] == '%' && i + 2 < str.size()) {
+            int value;
+            std::istringstream iss(str.substr(i + 1, 2));
+            if (iss >> std::hex >> value) {
+                result += static_cast<char>(value);
+                i += 2;
+            } else {
+                result += str[i];
+            }
+        } else if (str[i] == '+') {
+            result += ' ';
+        } else {
+            result += str[i];
+        }
+    }
+    return result;
+}
+
+std::unordered_map<std::string, std::string> wServer::parseQueryString(const std::string& query) {
+    std::unordered_map<std::string, std::string> result;
+
+    if (query.empty()) return result;
+
+    std::string::size_type start = 0;
+    while (start < query.size()) {
+        auto end = query.find('&', start);
+        if (end == std::string::npos) end = query.size();
+
+        auto eq = query.find('=', start);
+        if (eq != std::string::npos && eq < end) {
+            std::string key = urlDecode(query.substr(start, eq - start));
+            std::string value = urlDecode(query.substr(eq + 1, end - eq - 1));
+            result[key] = value;
+        }
+
+        start = end + 1;
+    }
+
+    return result;
 }
 
 void wServer::run(uint16_t port)
 {
-    boost::asio::ip::tcp::endpoint endpoint(tcp::v4(), port);
-    acceptor_ = boost::asio::ip::tcp::acceptor(io_context_, endpoint);
+    boost::asio::ip::tcp::endpoint ep(tcp::v4(), port);
+    acceptor_ = boost::asio::ip::tcp::acceptor(io_context_, ep);
     std::cout << "Server listening on port " << port << std::endl;
 
     auto trim = [](std::string& s) {
@@ -47,12 +96,15 @@ void wServer::run(uint16_t port)
     auto status_text = [](int s) {
         switch (s) {
             case 200: return "OK";
+            case 201: return "Created";
+            case 204: return "No Content";
             case 400: return "Bad Request";
             case 404: return "Not Found";
             case 405: return "Method Not Allowed";
             case 411: return "Length Required";
             case 413: return "Payload Too Large";
             case 415: return "Unsupported Media Type";
+            case 500: return "Internal Server Error";
             default:  return "OK";
         }
     };
@@ -66,18 +118,22 @@ void wServer::run(uint16_t port)
         boost::asio::read_until(socket, buf, "\r\n\r\n");
         std::istream request_stream(&buf);
 
-        std::string method, path, version;
-        request_stream >> method >> path >> version;
+        std::string method, fullPath, version;
+        request_stream >> method >> fullPath >> version;
 
         std::string dummy;
         std::getline(request_stream, dummy);
 
-        std::string clean_path = path;
-        if (!path.empty()) {
-            auto qm = path.find('?');
-            if (qm != std::string::npos) clean_path = path.substr(0, qm);
+        // Parse path and query string
+        std::string cleanPath = fullPath;
+        std::string queryString;
+        auto qm = fullPath.find('?');
+        if (qm != std::string::npos) {
+            cleanPath = fullPath.substr(0, qm);
+            queryString = fullPath.substr(qm + 1);
         }
 
+        // Parse HTTP method
         bool method_ok = true;
         HttpRequest req_type = HttpRequest::GET;
         try {
@@ -86,6 +142,7 @@ void wServer::run(uint16_t port)
             method_ok = false;
         }
 
+        // Parse headers
         std::string header_line;
         size_t content_length = 0;
         bool has_content_length = false;
@@ -118,6 +175,7 @@ void wServer::run(uint16_t port)
             }
         }
 
+        // Read body
         std::string body;
         {
             std::string already(std::istreambuf_iterator<char>(request_stream), {});
@@ -136,7 +194,7 @@ void wServer::run(uint16_t port)
             }
         }
 
-        // Extract media type and boundary using MultipartParser
+        // Extract media type and boundary
         std::string media_type;
         std::string boundary;
         {
@@ -146,66 +204,91 @@ void wServer::run(uint16_t port)
             boundary = MultipartParser::extractBoundary(content_type_header);
         }
 
-        int status = 200;
-        std::string response_body;
+        Response response;
 
-        auto it = handlers_.find(clean_path);
         if (!method_ok) {
-            status = 405;
-            response_body = "Method Not Allowed";
+            response = Response::methodNotAllowed();
         }
         else if (has_content_length && content_length > MAX_BODY_SIZE) {
-            status = 413;
-            response_body = "Payload Too Large";
-        }
-        else if (it == handlers_.end()) {
-            status = 404;
-            response_body = "Not Found";
-        }
-        else if (it->second.get_rest_type() != req_type) {
-            status = 405;
-            response_body = "Method Not Allowed";
+            response = {413, "application/json", R"({"status":"error","message":"Payload too large"})"};
         }
         else {
-            try {
-                std::vector<MultipartPart> parts;
+            // Find matching endpoint
+            endpoint* matched_endpoint = nullptr;
+            std::unordered_map<std::string, std::string> path_params;
 
-                if (starts_with_icase(media_type, "multipart/form-data")) {
-                    if (boundary.empty()) {
-                        status = 400;
-                        response_body = "Bad Request: missing multipart boundary";
-                    } else {
-                        parts = MultipartParser::parse(body, boundary);
-                        response_body = it->second.get_handler()(parts);
-                    }
-                } else {
-                    // Non-multipart: create single part with raw body
-                    MultipartPart single_part;
-                    single_part.name = "body";
-                    single_part.content_type = media_type;
-                    single_part.data = std::vector<uint8_t>(body.begin(), body.end());
-                    parts.push_back(std::move(single_part));
-                    response_body = it->second.get_handler()(parts);
+            for (auto& ep : endpoints_) {
+                if (ep.get_rest_type() == req_type && ep.matches(cleanPath, path_params)) {
+                    matched_endpoint = &ep;
+                    break;
                 }
             }
-            catch (const std::exception& e) {
-                status = 400;
-                response_body = std::string("Bad Request: ") + e.what();
+
+            if (!matched_endpoint) {
+                // Check if path exists with different method
+                bool path_exists = false;
+                for (auto& ep : endpoints_) {
+                    std::unordered_map<std::string, std::string> dummy_params;
+                    if (ep.matches(cleanPath, dummy_params)) {
+                        path_exists = true;
+                        break;
+                    }
+                }
+
+                if (path_exists) {
+                    response = Response::methodNotAllowed();
+                } else {
+                    response = Response::notFound("Endpoint not found");
+                }
             }
-            catch (...) {
-                status = 400;
-                response_body = "Bad Request";
+            else {
+                try {
+                    // Build Request object
+                    Request req;
+                    req.method = req_type;
+                    req.path = cleanPath;
+                    req.params = path_params;
+                    req.query = parseQueryString(queryString);
+                    req.rawBody = body;
+
+                    // Parse multipart if applicable
+                    if (starts_with_icase(media_type, "multipart/form-data")) {
+                        if (boundary.empty()) {
+                            response = Response::badRequest("Missing multipart boundary");
+                        } else {
+                            req.parts = MultipartParser::parse(body, boundary);
+                            response = matched_endpoint->handle(req);
+                        }
+                    } else {
+                        // For non-multipart, create single part with body
+                        if (!body.empty()) {
+                            MultipartPart single_part;
+                            single_part.name = "body";
+                            single_part.content_type = media_type;
+                            single_part.data = std::vector<uint8_t>(body.begin(), body.end());
+                            req.parts.push_back(std::move(single_part));
+                        }
+                        response = matched_endpoint->handle(req);
+                    }
+                }
+                catch (const std::exception& e) {
+                    response = Response::error(e.what());
+                }
+                catch (...) {
+                    response = Response::error("Unknown error");
+                }
             }
         }
 
-        std::ostringstream response;
-        response << "HTTP/1.1 " << status << " " << status_text(status) << "\r\n";
-        response << "Content-Length: " << response_body.size() << "\r\n";
-        response << "Content-Type: text/plain\r\n";
-        response << "Connection: close\r\n\r\n";
-        response << response_body;
+        // Send response
+        std::ostringstream http_response;
+        http_response << "HTTP/1.1 " << response.status << " " << status_text(response.status) << "\r\n";
+        http_response << "Content-Length: " << response.body.size() << "\r\n";
+        http_response << "Content-Type: " << response.contentType << "\r\n";
+        http_response << "Connection: close\r\n\r\n";
+        http_response << response.body;
 
-        boost::asio::write(socket, boost::asio::buffer(response.str()));
+        boost::asio::write(socket, boost::asio::buffer(http_response.str()));
         socket.close();
     }
 }

@@ -37,6 +37,85 @@ Node GraphDB::find(const std::string& id) const
     }
 }
 
+bool GraphDB::exists(const std::string& id) const
+{
+    return nodes.find(id) != nodes.end();
+}
+
+nlohmann::json GraphDB::getAllNodes() const
+{
+    nlohmann::json result = nlohmann::json::array();
+
+    // Sort by ID for consistent output
+    std::vector<std::pair<int, Node*>> sorted_nodes;
+    for (const auto& pair : nodes) {
+        try {
+            int nodeId = std::stoi(pair.first);
+            sorted_nodes.emplace_back(nodeId, pair.second);
+        } catch (...) {
+            result.push_back(pair.second->to_json());
+        }
+    }
+
+    std::sort(sorted_nodes.begin(), sorted_nodes.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    for (const auto& [_, node] : sorted_nodes) {
+        result.push_back(node->to_json());
+    }
+
+    return result;
+}
+
+nlohmann::json GraphDB::findNodes(const std::unordered_map<std::string, std::string>& filters) const
+{
+    nlohmann::json result = nlohmann::json::array();
+
+    for (const auto& [id, node] : nodes) {
+        bool match = true;
+
+        for (const auto& [key, value] : filters) {
+            if (key == "subject") {
+                if (node->getSubject() != value) match = false;
+            } else if (key == "author") {
+                if (node->getAuthor() != value) match = false;
+            } else if (key == "course") {
+                try {
+                    if (node->getCourse() != std::stoi(value)) match = false;
+                } catch (...) { match = false; }
+            } else if (key == "title") {
+                // Partial match for title
+                if (node->getTitle().find(value) == std::string::npos) match = false;
+            } else if (key == "tag") {
+                // Check if tag exists
+                auto tags = node->getTags();
+                bool hasTag = std::find(tags.begin(), tags.end(), value) != tags.end();
+                if (!hasTag) match = false;
+            }
+
+            if (!match) break;
+        }
+
+        if (match) {
+            result.push_back(node->to_json());
+        }
+    }
+
+    return result;
+}
+
+bool GraphDB::updateNode(const std::string& id, const nlohmann::json& updates)
+{
+    auto it = nodes.find(id);
+    if (it == nodes.end()) {
+        return false;
+    }
+
+    it->second->updateFromJson(updates);
+    saveToJson();
+    return true;
+}
+
 std::string GraphDB::serialize() const
 {
     std::vector<nlohmann::json> nodes_json;

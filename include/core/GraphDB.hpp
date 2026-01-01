@@ -18,8 +18,14 @@ public:
     // Node operations
     std::string serialize() const;
     Node find(const std::string& id) const;
+    bool exists(const std::string& id) const;
     std::string addNode(nlohmann::json& j, const std::vector<std::pair<std::string, std::string>>& files = {});
+    bool updateNode(const std::string& id, const nlohmann::json& updates);
     bool deleteNode(const std::string& id);
+
+    // Query operations
+    nlohmann::json getAllNodes() const;
+    nlohmann::json findNodes(const std::unordered_map<std::string, std::string>& filters) const;
     
     // File operations
     std::string addFileToNode(const std::string& nodeId, const std::string& filename, const std::string& content);
