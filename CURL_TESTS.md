@@ -1,6 +1,6 @@
-# Тестовые cURL запросы для TheWhisperDB
+# Тестовые cURL запросы для TheWhisperDB REST API
 
-Коллекция готовых команд для тестирования API.
+Коллекция готовых команд для тестирования полного REST API.
 
 > **Предварительно:** Убедитесь, что сервер запущен на `http://localhost:8080`
 
@@ -8,59 +8,140 @@
 
 ## Оглавление
 
-1. [Проверка работоспособности](#проверка-работоспособности)
-2. [Загрузка с метаданными](#загрузка-с-метаданными)
-3. [Загрузка файлов](#загрузка-файлов)
-4. [Различные форматы метаданных](#различные-форматы-метаданных)
+1. [Health Check](#health-check)
+2. [CRUD операции с узлами](#crud-операции-с-узлами)
+   - [Получение списка узлов (GET)](#получение-списка-узлов)
+   - [Получение узла по ID (GET)](#получение-узла-по-id)
+   - [Создание узла (POST)](#создание-узла)
+   - [Обновление узла (PUT)](#обновление-узла)
+   - [Удаление узла (DELETE)](#удаление-узла)
+3. [Работа с файлами](#работа-с-файлами)
+4. [Фильтрация и поиск](#фильтрация-и-поиск)
 5. [Тестирование ошибок](#тестирование-ошибок)
-6. [Продвинутые примеры](#продвинутые-примеры)
+6. [Скрипты автотестирования](#скрипты-автотестирования)
 
 ---
 
-## Проверка работоспособности
+## Health Check
 
-### Тестовый endpoint (базовая проверка)
+### Проверка работоспособности сервера
 
 ```bash
-curl -X POST http://localhost:8080/test \
-  -F 'data=hello world'
+curl -s http://localhost:8080/health | jq .
 ```
 
 **Ожидаемый ответ:**
-```
-Test endpoint. Got 1 parts.
-Part 0: name="data", size=11 bytes
-```
-
-### Проверка с несколькими частями
-
-```bash
-curl -X POST http://localhost:8080/test \
-  -F 'field1=value1' \
-  -F 'field2=value2' \
-  -F 'field3=value3'
-```
-
-**Ожидаемый ответ:**
-```
-Test endpoint. Got 3 parts.
-Part 0: name="field1", size=6 bytes
-Part 1: name="field2", size=6 bytes
-Part 2: name="field3", size=6 bytes
+```json
+{
+  "status": "ok",
+  "service": "TheWhisperDB",
+  "nodes_count": 0
+}
 ```
 
 ---
 
-## Загрузка с метаданными
+## CRUD операции с узлами
 
-### Минимальный запрос (только обязательные поля)
+### Получение списка узлов
+
+#### Все узлы
 
 ```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Тестовая лекция","author":"Иванов","subject":"Математика"}'
+curl -s http://localhost:8080/api/nodes | jq .
 ```
 
-**Ожидаемый ответ:**
+**Ответ:**
+```json
+{
+  "status": "success",
+  "count": 2,
+  "nodes": [
+    {"id": 1, "title": "Лекция 1", ...},
+    {"id": 2, "title": "Лекция 2", ...}
+  ]
+}
+```
+
+#### С фильтрацией по предмету
+
+```bash
+curl -s "http://localhost:8080/api/nodes?subject=Математика" | jq .
+```
+
+#### С фильтрацией по автору
+
+```bash
+curl -s "http://localhost:8080/api/nodes?author=Иванов" | jq .
+```
+
+#### С фильтрацией по курсу
+
+```bash
+curl -s "http://localhost:8080/api/nodes?course=101" | jq .
+```
+
+#### Поиск по названию (частичное совпадение)
+
+```bash
+curl -s "http://localhost:8080/api/nodes?title=Лекция" | jq .
+```
+
+#### По тегу
+
+```bash
+curl -s "http://localhost:8080/api/nodes?tag=алгоритмы" | jq .
+```
+
+#### Комбинированный фильтр
+
+```bash
+curl -s "http://localhost:8080/api/nodes?subject=Информатика&course=101" | jq .
+```
+
+---
+
+### Получение узла по ID
+
+```bash
+curl -s http://localhost:8080/api/nodes/1 | jq .
+```
+
+**Ответ:**
+```json
+{
+  "status": "success",
+  "node": {
+    "id": 1,
+    "title": "Введение в алгоритмы",
+    "author": "Иванов",
+    "subject": "Информатика",
+    "course": 101,
+    "description": "Базовые понятия",
+    "date": "2024-01-15 10:00:00",
+    "tags": ["алгоритмы", "основы"],
+    "storage_path": "2024/01/15/file.pdf",
+    "LinkedNodes": []
+  },
+  "files": [
+    "2024/01/15/lecture_1705312800000_1234.pdf"
+  ]
+}
+```
+
+---
+
+### Создание узла
+
+#### Минимальный запрос (только обязательные поля)
+
+```bash
+curl -s -X POST http://localhost:8080/api/nodes \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Новая лекция","author":"Иванов","subject":"Математика"}' | jq .
+```
+
+**Ответ:**
 ```json
 {
   "status": "success",
@@ -69,438 +150,353 @@ curl -X POST http://localhost:8080/api/upload \
 }
 ```
 
-### Полный набор метаданных
+#### Полный набор полей
 
 ```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={
+curl -s -X POST http://localhost:8080/api/nodes \
+  -H "Content-Type: application/json" \
+  -d '{
     "title": "Введение в алгоритмы",
     "author": "Петров А.А.",
     "subject": "Информатика",
     "course": 101,
-    "description": "Базовые понятия теории алгоритмов и структур данных",
-    "tags": ["алгоритмы", "структуры данных", "основы"],
-    "date": "2024-01-15 10:30:00"
-  }'
+    "description": "Базовые понятия теории алгоритмов",
+    "tags": ["алгоритмы", "структуры данных"],
+    "LinkedNodes": [2, 3]
+  }' | jq .
 ```
 
-### С указанием связей (LinkedNodes)
+#### С файлом (multipart)
 
 ```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={
-    "title": "Практика по алгоритмам",
-    "author": "Петров А.А.",
-    "subject": "Информатика",
-    "course": 101,
-    "LinkedNodes": [1, 2, 3]
-  }'
+curl -s -X POST http://localhost:8080/api/nodes \
+  -F 'metadata={"title":"Лекция с файлом","author":"Иванов","subject":"Физика"}' \
+  -F 'file=@lecture.pdf' | jq .
+```
+
+#### С несколькими файлами
+
+```bash
+curl -s -X POST http://localhost:8080/api/nodes \
+  -F 'metadata={"title":"Материалы курса","author":"Доцент","subject":"Химия","course":201}' \
+  -F 'lecture=@lecture.pdf' \
+  -F 'notes=@notes.txt' \
+  -F 'slides=@presentation.pptx' | jq .
 ```
 
 ---
 
-## Загрузка файлов
+### Обновление узла
 
-### Один текстовый файл
+#### Обновление одного поля
 
 ```bash
-# Создаем тестовый файл
-echo "Это содержимое тестового файла" > /tmp/test.txt
-
-# Загружаем
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Заметки","author":"Студент","subject":"Физика"}' \
-  -F 'file=@/tmp/test.txt'
+curl -s -X PUT http://localhost:8080/api/nodes/1 \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Обновленное название"}' | jq .
 ```
 
-**Ожидаемый ответ:**
+**Ответ:**
 ```json
 {
   "status": "success",
-  "nodeId": "2",
+  "message": "Node updated",
+  "node": {
+    "id": 1,
+    "title": "Обновленное название",
+    ...
+  }
+}
+```
+
+#### Обновление нескольких полей
+
+```bash
+curl -s -X PUT http://localhost:8080/api/nodes/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Новое название",
+    "description": "Обновленное описание",
+    "tags": ["новый", "тег"]
+  }' | jq .
+```
+
+#### Добавление связей
+
+```bash
+curl -s -X PUT http://localhost:8080/api/nodes/1 \
+  -H "Content-Type: application/json" \
+  -d '{"LinkedNodes": [2, 3, 4]}' | jq .
+```
+
+---
+
+### Удаление узла
+
+```bash
+curl -s -X DELETE http://localhost:8080/api/nodes/1 | jq .
+```
+
+**Ответ:**
+```json
+{
+  "status": "success",
+  "message": "Node deleted",
+  "deletedId": "1"
+}
+```
+
+---
+
+## Работа с файлами
+
+### Получение списка файлов узла
+
+```bash
+curl -s http://localhost:8080/api/nodes/1/files | jq .
+```
+
+**Ответ:**
+```json
+{
+  "status": "success",
+  "nodeId": "1",
   "files": [
-    {
-      "originalName": "test.txt",
-      "storedPath": "2024/01/15/test_1705312800000_1234.txt"
-    }
+    "2024/01/15/lecture_1705312800000_1234.pdf",
+    "2024/01/15/notes_1705312800001_5678.txt"
   ]
 }
 ```
 
-### Несколько файлов
+### Добавление файла к существующему узлу
 
 ```bash
-# Создаем тестовые файлы
-echo "Файл 1" > /tmp/file1.txt
-echo "Файл 2" > /tmp/file2.txt
-echo "Файл 3" > /tmp/file3.txt
-
-# Загружаем все
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Пакет документов","author":"Менеджер","subject":"Документация"}' \
-  -F 'file1=@/tmp/file1.txt' \
-  -F 'file2=@/tmp/file2.txt' \
-  -F 'file3=@/tmp/file3.txt'
+curl -s -X POST http://localhost:8080/api/nodes/1/files \
+  -F 'file=@additional_notes.pdf' | jq .
 ```
 
-### PDF файл
-
-```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Лекция в PDF","author":"Профессор","subject":"История"}' \
-  -F 'document=@/path/to/lecture.pdf;type=application/pdf'
+**Ответ:**
+```json
+{
+  "status": "success",
+  "nodeId": "1",
+  "addedFiles": [
+    "2024/01/15/additional_notes_1705312900000_9012.pdf"
+  ]
+}
 ```
 
-### Изображение
+### Добавление нескольких файлов
 
 ```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Диаграмма","author":"Дизайнер","subject":"Графика"}' \
-  -F 'image=@/path/to/diagram.png;type=image/png'
-```
-
-### Бинарный файл (архив)
-
-```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Исходный код","author":"Разработчик","subject":"Программирование"}' \
-  -F 'archive=@/path/to/source.zip;type=application/zip'
-```
-
-### Смешанные типы файлов
-
-```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={
-    "title": "Проект с документацией",
-    "author": "Команда разработки",
-    "subject": "Разработка ПО",
-    "tags": ["проект", "документация", "код"]
-  }' \
-  -F 'readme=@README.md;type=text/markdown' \
-  -F 'source=@main.cpp;type=text/x-c++src' \
-  -F 'diagram=@architecture.png;type=image/png'
+curl -s -X POST http://localhost:8080/api/nodes/1/files \
+  -F 'file1=@doc1.pdf' \
+  -F 'file2=@doc2.pdf' \
+  -F 'file3=@image.png' | jq .
 ```
 
 ---
 
-## Различные форматы метаданных
+## Фильтрация и поиск
 
-### Course как строка (автоконвертация)
-
-```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Тест","author":"Автор","subject":"Предмет","course":"123"}'
-```
-
-### Tags как строка (через запятую)
+### Примеры запросов с фильтрами
 
 ```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={
-    "title": "Материал с тегами",
-    "author": "Автор",
-    "subject": "Предмет",
-    "tags": "тег1, тег2, тег3"
-  }'
-```
+# Все лекции по математике
+curl -s "http://localhost:8080/api/nodes?subject=Математика" | jq '.nodes[] | {id, title}'
 
-### Минимальный JSON (однострочный)
+# Материалы автора Иванов
+curl -s "http://localhost:8080/api/nodes?author=Иванов" | jq '.nodes[] | {id, title, subject}'
 
-```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"T","author":"A","subject":"S"}'
-```
+# Курс 101
+curl -s "http://localhost:8080/api/nodes?course=101" | jq '.nodes'
 
-### Кириллица в метаданных
+# Поиск по названию
+curl -s "http://localhost:8080/api/nodes?title=Введение" | jq '.nodes[] | .title'
 
-```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={
-    "title": "Лекция по русскому языку",
-    "author": "Пушкин Александр Сергеевич",
-    "subject": "Литература",
-    "description": "Анализ произведения «Евгений Онегин»",
-    "tags": ["поэзия", "классика", "XIX век"]
-  }'
-```
+# По тегу "алгоритмы"
+curl -s "http://localhost:8080/api/nodes?tag=алгоритмы" | jq '.count'
 
-### Специальные символы
-
-```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={
-    "title": "Формулы: E=mc², ∑, ∫, √",
-    "author": "Эйнштейн",
-    "subject": "Физика",
-    "description": "Теория относительности (специальная & общая)"
-  }'
+# Комбинация: предмет + курс
+curl -s "http://localhost:8080/api/nodes?subject=Информатика&course=101" | jq '.nodes'
 ```
 
 ---
 
 ## Тестирование ошибок
 
-### Отсутствует title
+### Узел не найден (404)
 
 ```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"author":"Автор","subject":"Предмет"}'
+curl -s http://localhost:8080/api/nodes/999 | jq .
 ```
 
-**Ожидаемый ответ:**
+**Ответ:**
 ```json
 {
   "status": "error",
-  "message": "Invalid metadata: Missing required field: title"
+  "message": "Node not found: 999"
 }
 ```
 
-### Отсутствует author
+### Неверный метод (405)
 
 ```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Заголовок","subject":"Предмет"}'
+curl -s -X DELETE http://localhost:8080/api/nodes | jq .
 ```
 
-**Ожидаемый ответ:**
+**Ответ:**
 ```json
 {
   "status": "error",
-  "message": "Invalid metadata: Missing required field: author"
+  "message": "Method not allowed"
 }
 ```
 
-### Отсутствует subject
+### Отсутствует обязательное поле (400)
 
 ```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Заголовок","author":"Автор"}'
+curl -s -X POST http://localhost:8080/api/nodes \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Без автора"}' | jq .
 ```
 
-**Ожидаемый ответ:**
-```json
-{
-  "status": "error",
-  "message": "Invalid metadata: Missing required field: subject"
-}
-```
-
-### Пустой title
+### Невалидный JSON (400)
 
 ```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"","author":"Автор","subject":"Предмет"}'
+curl -s -X POST http://localhost:8080/api/nodes \
+  -H "Content-Type: application/json" \
+  -d '{invalid}' | jq .
 ```
 
-**Ожидаемый ответ:**
-```json
-{
-  "status": "error",
-  "message": "Invalid metadata: Title must be a non-empty string"
-}
-```
-
-### Невалидный JSON
+### Пустое тело запроса
 
 ```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={invalid json}'
+curl -s -X POST http://localhost:8080/api/nodes \
+  -H "Content-Type: application/json" | jq .
 ```
 
-**Ожидаемый ответ:**
-```json
-{
-  "status": "error",
-  "message": "Invalid JSON metadata: ..."
-}
-```
-
-### Пустой запрос
+### Endpoint не найден (404)
 
 ```bash
-curl -X POST http://localhost:8080/api/upload
-```
-
-**Ожидаемый ответ:**
-```json
-{
-  "status": "error",
-  "message": "No data received"
-}
-```
-
-### Невалидный course
-
-```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Тест","author":"А","subject":"П","course":"abc"}'
-```
-
-**Ожидаемый ответ:**
-```json
-{
-  "status": "error",
-  "message": "Invalid metadata: Course must be a valid number"
-}
-```
-
-### Неверный endpoint
-
-```bash
-curl -X POST http://localhost:8080/api/nonexistent \
-  -F 'data=test'
-```
-
-**Ожидаемый ответ:**
-```
-Not Found
-```
-
-### Неверный HTTP метод
-
-```bash
-curl -X GET http://localhost:8080/api/upload
-```
-
-**Ожидаемый ответ:**
-```
-Method Not Allowed
+curl -s http://localhost:8080/api/unknown | jq .
 ```
 
 ---
 
-## Продвинутые примеры
+## Скрипты автотестирования
 
-### Verbose режим (отладка)
-
-```bash
-curl -v -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Debug","author":"Dev","subject":"Test"}'
-```
-
-### С выводом заголовков ответа
-
-```bash
-curl -i -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Headers","author":"Dev","subject":"Test"}'
-```
-
-### Сохранение ответа в файл
-
-```bash
-curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Save","author":"Dev","subject":"Test"}' \
-  -o response.json
-```
-
-### Таймаут запроса
-
-```bash
-curl -X POST http://localhost:8080/api/upload \
-  --max-time 10 \
-  -F 'metadata={"title":"Timeout","author":"Dev","subject":"Test"}' \
-  -F 'file=@large_file.bin'
-```
-
-### Тихий режим с выводом только тела
-
-```bash
-curl -s -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Silent","author":"Dev","subject":"Test"}' | jq .
-```
-
-### Цикл загрузок (bash)
-
-```bash
-for i in {1..5}; do
-  curl -s -X POST http://localhost:8080/api/upload \
-    -F "metadata={\"title\":\"Документ $i\",\"author\":\"Бот\",\"subject\":\"Тестирование\"}"
-  echo ""
-done
-```
-
-### Загрузка из stdin
-
-```bash
-echo "Содержимое файла из stdin" | curl -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Stdin","author":"Pipe","subject":"Test"}' \
-  -F 'file=@-;filename=stdin.txt'
-```
-
-### Параллельные запросы (xargs)
-
-```bash
-seq 1 10 | xargs -P 5 -I {} curl -s -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Parallel {}","author":"xargs","subject":"Concurrency"}'
-```
-
----
-
-## Скрипты для тестирования
-
-### Полный тест (test_api.sh)
+### Полный CRUD тест
 
 ```bash
 #!/bin/bash
+set -e
 
-BASE_URL="http://localhost:8080"
+BASE="http://localhost:8080"
 
-echo "=== Тестирование TheWhisperDB API ==="
+echo "=== TheWhisperDB API Test ==="
 echo ""
 
-# Тест 1: Проверка сервера
-echo "[1] Проверка тестового endpoint..."
-curl -s -X POST "$BASE_URL/test" -F 'ping=pong'
-echo -e "\n"
+# 1. Health check
+echo "[1] Health check..."
+curl -s "$BASE/health" | jq -r '.status'
 
-# Тест 2: Минимальная загрузка
-echo "[2] Минимальная загрузка метаданных..."
-curl -s -X POST "$BASE_URL/api/upload" \
-  -F 'metadata={"title":"API Test","author":"Script","subject":"Testing"}' | jq .
+# 2. Create node
+echo "[2] Creating node..."
+NODE_ID=$(curl -s -X POST "$BASE/api/nodes" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Test Node","author":"Tester","subject":"Testing"}' | jq -r '.nodeId')
+echo "Created node ID: $NODE_ID"
+
+# 3. Get node
+echo "[3] Getting node..."
+curl -s "$BASE/api/nodes/$NODE_ID" | jq -r '.node.title'
+
+# 4. Update node
+echo "[4] Updating node..."
+curl -s -X PUT "$BASE/api/nodes/$NODE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Updated Title","description":"Added description"}' | jq -r '.message'
+
+# 5. Verify update
+echo "[5] Verifying update..."
+curl -s "$BASE/api/nodes/$NODE_ID" | jq -r '.node.title'
+
+# 6. List all nodes
+echo "[6] Listing nodes..."
+curl -s "$BASE/api/nodes" | jq -r '.count'
+
+# 7. Delete node
+echo "[7] Deleting node..."
+curl -s -X DELETE "$BASE/api/nodes/$NODE_ID" | jq -r '.message'
+
+# 8. Verify deletion
+echo "[8] Verifying deletion..."
+STATUS=$(curl -s "$BASE/api/nodes/$NODE_ID" | jq -r '.status')
+if [ "$STATUS" = "error" ]; then
+  echo "Node deleted successfully"
+else
+  echo "ERROR: Node still exists!"
+  exit 1
+fi
+
 echo ""
-
-# Тест 3: Загрузка с файлом
-echo "[3] Загрузка с файлом..."
-echo "Test file content" > /tmp/api_test.txt
-curl -s -X POST "$BASE_URL/api/upload" \
-  -F 'metadata={"title":"With File","author":"Script","subject":"Testing"}' \
-  -F 'file=@/tmp/api_test.txt' | jq .
-rm /tmp/api_test.txt
-echo ""
-
-# Тест 4: Ошибка валидации
-echo "[4] Тест ошибки (отсутствует title)..."
-curl -s -X POST "$BASE_URL/api/upload" \
-  -F 'metadata={"author":"Script","subject":"Testing"}' | jq .
-echo ""
-
-echo "=== Тестирование завершено ==="
+echo "=== All tests passed! ==="
 ```
 
-### Нагрузочный тест (load_test.sh)
+### Тест с файлами
 
 ```bash
 #!/bin/bash
+BASE="http://localhost:8080"
 
-URL="http://localhost:8080/api/upload"
+# Create test file
+echo "Test content" > /tmp/test_file.txt
+
+# Create node with file
+echo "Creating node with file..."
+RESULT=$(curl -s -X POST "$BASE/api/nodes" \
+  -F 'metadata={"title":"File Test","author":"Bot","subject":"Testing"}' \
+  -F 'file=@/tmp/test_file.txt')
+
+NODE_ID=$(echo "$RESULT" | jq -r '.nodeId')
+echo "Node ID: $NODE_ID"
+
+# Get files
+echo "Files:"
+curl -s "$BASE/api/nodes/$NODE_ID/files" | jq -r '.files[]'
+
+# Add another file
+echo "Additional content" > /tmp/test_file2.txt
+curl -s -X POST "$BASE/api/nodes/$NODE_ID/files" \
+  -F 'file=@/tmp/test_file2.txt' | jq -r '.addedFiles[]'
+
+# Cleanup
+rm /tmp/test_file.txt /tmp/test_file2.txt
+curl -s -X DELETE "$BASE/api/nodes/$NODE_ID" | jq -r '.message'
+```
+
+### Нагрузочный тест
+
+```bash
+#!/bin/bash
+URL="http://localhost:8080/api/nodes"
 COUNT=${1:-100}
 PARALLEL=${2:-10}
 
-echo "Нагрузочный тест: $COUNT запросов, $PARALLEL параллельных"
+echo "Load test: $COUNT requests, $PARALLEL parallel"
 
+# Create nodes
+echo "Creating $COUNT nodes..."
 time seq 1 $COUNT | xargs -P $PARALLEL -I {} \
   curl -s -X POST "$URL" \
-  -F 'metadata={"title":"Load Test {}","author":"Benchmark","subject":"Performance"}' \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Load Test {}","author":"Bot","subject":"Benchmark"}' \
   > /dev/null
 
-echo "Готово!"
-```
-
-**Использование:**
-```bash
-chmod +x load_test.sh
-./load_test.sh 100 10  # 100 запросов, 10 параллельных
+# Count created
+echo "Nodes in DB:"
+curl -s "$URL" | jq '.count'
 ```
 
 ---
@@ -508,39 +504,56 @@ chmod +x load_test.sh
 ## Полезные однострочники
 
 ```bash
-# Проверить что сервер работает
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/test -F 'x=y'
+# Количество узлов
+curl -s http://localhost:8080/api/nodes | jq '.count'
 
-# Получить только nodeId из ответа
-curl -s -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"T","author":"A","subject":"S"}' | jq -r '.nodeId'
+# Только ID и названия
+curl -s http://localhost:8080/api/nodes | jq '.nodes[] | {id, title}'
 
-# Измерить время ответа
-curl -s -o /dev/null -w "Time: %{time_total}s\n" -X POST http://localhost:8080/api/upload \
-  -F 'metadata={"title":"Benchmark","author":"Timer","subject":"Test"}'
+# Список предметов
+curl -s http://localhost:8080/api/nodes | jq -r '[.nodes[].subject] | unique | .[]'
 
-# Загрузить все .txt файлы из директории
-for f in *.txt; do
-  curl -s -X POST http://localhost:8080/api/upload \
-    -F "metadata={\"title\":\"$f\",\"author\":\"Batch\",\"subject\":\"Import\"}" \
-    -F "file=@$f"
+# Проверка статуса сервера
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health
+
+# Время ответа
+curl -s -o /dev/null -w "Time: %{time_total}s\n" http://localhost:8080/api/nodes
+
+# Создать и сразу получить ID
+curl -s -X POST http://localhost:8080/api/nodes \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Quick","author":"Me","subject":"Test"}' | jq -r '.nodeId'
+
+# Удалить все узлы (осторожно!)
+for id in $(curl -s http://localhost:8080/api/nodes | jq -r '.nodes[].id'); do
+  curl -s -X DELETE "http://localhost:8080/api/nodes/$id"
 done
+```
+
+---
+
+## Legacy API (обратная совместимость)
+
+Старый endpoint `/api/upload` по-прежнему работает:
+
+```bash
+curl -s -X POST http://localhost:8080/api/upload \
+  -F 'metadata={"title":"Legacy","author":"Old","subject":"Compat"}' \
+  -F 'file=@document.pdf' | jq .
 ```
 
 ---
 
 ## Переменные окружения
 
-Для удобства можно задать переменные:
-
 ```bash
 export WHISPERDB_URL="http://localhost:8080"
 
-# Использование
-curl -X POST "$WHISPERDB_URL/api/upload" \
-  -F 'metadata={"title":"Env Test","author":"Shell","subject":"Config"}'
+# Примеры использования
+curl -s "$WHISPERDB_URL/health" | jq .
+curl -s "$WHISPERDB_URL/api/nodes" | jq '.count'
 ```
 
 ---
 
-*Документация актуальна для TheWhisperDB с MultipartParser*
+*Документация для TheWhisperDB REST API v2.0*

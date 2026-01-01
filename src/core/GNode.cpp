@@ -130,3 +130,58 @@ std::string Node::to_str() {
            "Subject: " + subject + "\n" +
            "Description: " + description + "\n";
 }
+
+void Node::updateFromJson(const nlohmann::json& j) {
+    // Update only fields that are present in JSON
+    if (j.contains("title") && j["title"].is_string()) {
+        title = j["title"].get<std::string>();
+    }
+
+    if (j.contains("course")) {
+        if (j["course"].is_number_integer()) {
+            course = j["course"].get<int>();
+        } else if (j["course"].is_string()) {
+            try {
+                course = std::stoi(j["course"].get<std::string>());
+            } catch (...) {}
+        }
+    }
+
+    if (j.contains("subject") && j["subject"].is_string()) {
+        subject = j["subject"].get<std::string>();
+    }
+
+    if (j.contains("description") && j["description"].is_string()) {
+        description = j["description"].get<std::string>();
+    }
+
+    if (j.contains("author") && j["author"].is_string()) {
+        author = j["author"].get<std::string>();
+    }
+
+    if (j.contains("date") && j["date"].is_string()) {
+        date = j["date"].get<std::string>();
+    }
+
+    if (j.contains("tags")) {
+        if (j["tags"].is_array()) {
+            tags = j["tags"].get<std::vector<std::string>>();
+        } else if (j["tags"].is_string()) {
+            tags.clear();
+            std::string tags_str = j["tags"].get<std::string>();
+            std::istringstream iss(tags_str);
+            std::string tag;
+            while (std::getline(iss, tag, ',')) {
+                tag.erase(0, tag.find_first_not_of(" \t"));
+                tag.erase(tag.find_last_not_of(" \t") + 1);
+                if (!tag.empty()) {
+                    tags.push_back(tag);
+                }
+            }
+        }
+    }
+
+    if (j.contains("LinkedNodes") && j["LinkedNodes"].is_array()) {
+        LinkedNodes = j["LinkedNodes"].get<std::vector<int>>();
+    }
+}

@@ -19,10 +19,28 @@ public:
     // Getters
     int getId() const { return id; }
     std::string getTitle() const { return title; }
+    int getCourse() const { return course; }
+    std::string getSubject() const { return subject; }
+    std::string getDescription() const { return description; }
+    std::string getAuthor() const { return author; }
+    std::string getDate() const { return date; }
+    std::vector<std::string> getTags() const { return tags; }
     std::string getStoragePath() const { return storage_path; }
-    
+    std::vector<int> getLinkedNodes() const { return LinkedNodes; }
+
     // Setters
+    void setTitle(const std::string& t) { title = t; }
+    void setCourse(int c) { course = c; }
+    void setSubject(const std::string& s) { subject = s; }
+    void setDescription(const std::string& d) { description = d; }
+    void setAuthor(const std::string& a) { author = a; }
+    void setDate(const std::string& d) { date = d; }
+    void setTags(const std::vector<std::string>& t) { tags = t; }
     void setStoragePath(const std::string& path) { storage_path = path; }
+    void setLinkedNodes(const std::vector<int>& nodes) { LinkedNodes = nodes; }
+
+    // Update from JSON (partial update)
+    void updateFromJson(const nlohmann::json& j);
 
 private:
     int id; // Unique identifier for the node

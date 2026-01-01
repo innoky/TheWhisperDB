@@ -7,8 +7,11 @@
 #include "server/endpoint.hpp"
 #include "server/UploadHandler.hpp"
 #include "http/MultipartParser.hpp"
+#include "http/Request.hpp"
 
 using json = nlohmann::json;
+using whisperdb::http::Request;
+using whisperdb::http::Response;
 using whisperdb::http::MultipartPart;
 
 std::shared_ptr<GraphDB> db;
@@ -31,82 +34,385 @@ int main()
     auto server = std::make_shared<wServer>();
     UploadHandler uploadHandler(*db);
 
-    // Test endpoint
-    endpoint test_ep(
-        [](const std::vector<MultipartPart>& parts) {
-            std::string response = "Test endpoint. Got " + std::to_string(parts.size()) + " parts.\n";
-            for (size_t i = 0; i < parts.size(); ++i) {
-                response += "Part " + std::to_string(i) + ": ";
-                response += "name=\"" + parts[i].name + "\"";
-                if (!parts[i].filename.empty()) {
-                    response += ", filename=\"" + parts[i].filename + "\"";
-                }
-                response += ", size=" + std::to_string(parts[i].data.size()) + " bytes\n";
-            }
-            return response;
-        },
-        HttpRequest::POST,
-        "/test"
-    );
-    server->add_endpoint(test_ep);
+    // ============================================
+    // GET /api/nodes - List all nodes with optional filters
+    // Query params: subject, author, course, title, tag
+    // ============================================
+    endpoint get_nodes(
+        [](const Request& req) -> Response {
+            json response;
 
-    // File upload endpoint
-    endpoint upload_ep(
-        [&uploadHandler](const std::vector<MultipartPart>& parts) -> std::string {
-            if (parts.empty()) {
-                return R"({"status":"error","message":"No data received"})";
+            // Check if there are any filters
+            std::unordered_map<std::string, std::string> filters;
+            for (const auto& [key, value] : req.query) {
+                if (key == "subject" || key == "author" || key == "course" ||
+                    key == "title" || key == "tag") {
+                    filters[key] = value;
+                }
+            }
+
+            json nodes;
+            if (filters.empty()) {
+                nodes = db->getAllNodes();
+            } else {
+                nodes = db->findNodes(filters);
+            }
+
+            response["status"] = "success";
+            response["count"] = nodes.size();
+            response["nodes"] = nodes;
+
+            return Response::ok(response.dump());
+        },
+        HttpRequest::GET,
+        "/api/nodes"
+    );
+    server->add_endpoint(get_nodes);
+
+    // ============================================
+    // GET /api/nodes/:id - Get single node by ID
+    // ============================================
+    endpoint get_node_by_id(
+        [](const Request& req) -> Response {
+            std::string id = req.getParam("id");
+
+            if (!db->exists(id)) {
+                return Response::notFound("Node not found: " + id);
             }
 
             try {
-                // Find metadata part (first part named "metadata" or first non-file part)
+                Node node = db->find(id);
+                json response;
+                response["status"] = "success";
+                response["node"] = node.to_json();
+                response["files"] = db->getNodeFiles(id);
+
+                return Response::ok(response.dump());
+            } catch (const std::exception& e) {
+                return Response::error(e.what());
+            }
+        },
+        HttpRequest::GET,
+        "/api/nodes/:id"
+    );
+    server->add_endpoint(get_node_by_id);
+
+    // ============================================
+    // POST /api/nodes - Create new node (with optional files)
+    // Supports both JSON body and multipart/form-data
+    // ============================================
+    endpoint create_node(
+        [&uploadHandler](const Request& req) -> Response {
+            try {
                 json metadata;
-                bool found_metadata = false;
+                std::vector<std::pair<std::string, std::vector<uint8_t>>> files;
 
-                for (const auto& part : parts) {
-                    if (part.name == "metadata" || (!part.isFile() && !found_metadata)) {
-                        std::string json_str = part.dataAsString();
+                if (req.parts.empty()) {
+                    return Response::badRequest("No data received");
+                }
 
-                        // Find JSON start (skip any preamble)
-                        size_t json_start = json_str.find('{');
-                        if (json_start != std::string::npos) {
-                            json_str = json_str.substr(json_start);
-                            metadata = json::parse(json_str);
-                            found_metadata = true;
-                            if (part.name == "metadata") break;
+                // Check if it's multipart or JSON
+                bool foundMetadata = false;
+                for (const auto& part : req.parts) {
+                    if (part.name == "metadata" || part.name == "body") {
+                        std::string jsonStr = part.dataAsString();
+                        size_t jsonStart = jsonStr.find('{');
+                        if (jsonStart != std::string::npos) {
+                            jsonStr = jsonStr.substr(jsonStart);
+                            metadata = json::parse(jsonStr);
+                            foundMetadata = true;
                         }
                     }
-                }
-
-                if (!found_metadata) {
-                    return R"({"status":"error","message":"No metadata found in request"})";
-                }
-
-                // Collect file parts
-                std::vector<std::pair<std::string, std::vector<uint8_t>>> files;
-                for (const auto& part : parts) {
                     if (part.isFile()) {
                         files.emplace_back(part.filename, part.data);
                     }
                 }
 
-                return uploadHandler.handleUpload(files, metadata);
+                if (!foundMetadata) {
+                    // Try parsing first part as JSON
+                    std::string jsonStr = req.parts[0].dataAsString();
+                    size_t jsonStart = jsonStr.find('{');
+                    if (jsonStart != std::string::npos) {
+                        jsonStr = jsonStr.substr(jsonStart);
+                        metadata = json::parse(jsonStr);
+                        foundMetadata = true;
+                    }
+                }
+
+                if (!foundMetadata) {
+                    return Response::badRequest("No metadata found in request");
+                }
+
+                std::string result = uploadHandler.handleUpload(files, metadata);
+                return Response::created(result);
 
             } catch (const json::parse_error& e) {
-                json error;
-                error["status"] = "error";
-                error["message"] = std::string("Invalid JSON metadata: ") + e.what();
-                return error.dump();
+                return Response::badRequest(std::string("Invalid JSON: ") + e.what());
             } catch (const std::exception& e) {
-                json error;
-                error["status"] = "error";
-                error["message"] = std::string("Error processing upload: ") + e.what();
-                return error.dump();
+                return Response::error(e.what());
+            }
+        },
+        HttpRequest::POST,
+        "/api/nodes"
+    );
+    server->add_endpoint(create_node);
+
+    // ============================================
+    // PUT /api/nodes/:id - Update existing node
+    // Body: JSON with fields to update
+    // ============================================
+    endpoint update_node(
+        [](const Request& req) -> Response {
+            std::string id = req.getParam("id");
+
+            if (!db->exists(id)) {
+                return Response::notFound("Node not found: " + id);
+            }
+
+            try {
+                json updates;
+
+                if (req.parts.empty()) {
+                    return Response::badRequest("No data received");
+                }
+
+                // Parse JSON body
+                std::string jsonStr = req.parts[0].dataAsString();
+                size_t jsonStart = jsonStr.find('{');
+                if (jsonStart != std::string::npos) {
+                    jsonStr = jsonStr.substr(jsonStart);
+                    updates = json::parse(jsonStr);
+                } else {
+                    return Response::badRequest("Invalid JSON body");
+                }
+
+                // Prevent changing ID
+                updates.erase("id");
+
+                if (db->updateNode(id, updates)) {
+                    Node node = db->find(id);
+                    json response;
+                    response["status"] = "success";
+                    response["message"] = "Node updated";
+                    response["node"] = node.to_json();
+
+                    return Response::ok(response.dump());
+                } else {
+                    return Response::error("Failed to update node");
+                }
+
+            } catch (const json::parse_error& e) {
+                return Response::badRequest(std::string("Invalid JSON: ") + e.what());
+            } catch (const std::exception& e) {
+                return Response::error(e.what());
+            }
+        },
+        HttpRequest::PUT,
+        "/api/nodes/:id"
+    );
+    server->add_endpoint(update_node);
+
+    // ============================================
+    // DELETE /api/nodes/:id - Delete node and its files
+    // ============================================
+    endpoint delete_node(
+        [](const Request& req) -> Response {
+            std::string id = req.getParam("id");
+
+            if (!db->exists(id)) {
+                return Response::notFound("Node not found: " + id);
+            }
+
+            if (db->deleteNode(id)) {
+                json response;
+                response["status"] = "success";
+                response["message"] = "Node deleted";
+                response["deletedId"] = id;
+
+                return Response::ok(response.dump());
+            } else {
+                return Response::error("Failed to delete node");
+            }
+        },
+        HttpRequest::DELETE,
+        "/api/nodes/:id"
+    );
+    server->add_endpoint(delete_node);
+
+    // ============================================
+    // GET /api/nodes/:id/files - Get files for a node
+    // ============================================
+    endpoint get_node_files(
+        [](const Request& req) -> Response {
+            std::string id = req.getParam("id");
+
+            if (!db->exists(id)) {
+                return Response::notFound("Node not found: " + id);
+            }
+
+            json response;
+            response["status"] = "success";
+            response["nodeId"] = id;
+            response["files"] = db->getNodeFiles(id);
+
+            return Response::ok(response.dump());
+        },
+        HttpRequest::GET,
+        "/api/nodes/:id/files"
+    );
+    server->add_endpoint(get_node_files);
+
+    // ============================================
+    // POST /api/nodes/:id/files - Add file to existing node
+    // ============================================
+    endpoint add_file_to_node(
+        [](const Request& req) -> Response {
+            std::string id = req.getParam("id");
+
+            if (!db->exists(id)) {
+                return Response::notFound("Node not found: " + id);
+            }
+
+            try {
+                std::vector<std::string> addedFiles;
+
+                for (const auto& part : req.parts) {
+                    if (part.isFile()) {
+                        std::string path = db->addFileToNode(id, part.filename, part.data);
+                        addedFiles.push_back(path);
+                    }
+                }
+
+                if (addedFiles.empty()) {
+                    return Response::badRequest("No files provided");
+                }
+
+                json response;
+                response["status"] = "success";
+                response["nodeId"] = id;
+                response["addedFiles"] = addedFiles;
+
+                return Response::created(response.dump());
+
+            } catch (const std::exception& e) {
+                return Response::error(e.what());
+            }
+        },
+        HttpRequest::POST,
+        "/api/nodes/:id/files"
+    );
+    server->add_endpoint(add_file_to_node);
+
+    // ============================================
+    // Legacy endpoint: POST /api/upload
+    // (kept for backward compatibility)
+    // ============================================
+    endpoint upload_ep(
+        [&uploadHandler](const Request& req) -> Response {
+            if (req.parts.empty()) {
+                return Response::badRequest("No data received");
+            }
+
+            try {
+                json metadata;
+                bool foundMetadata = false;
+
+                for (const auto& part : req.parts) {
+                    if (part.name == "metadata" || (!part.isFile() && !foundMetadata)) {
+                        std::string jsonStr = part.dataAsString();
+                        size_t jsonStart = jsonStr.find('{');
+                        if (jsonStart != std::string::npos) {
+                            jsonStr = jsonStr.substr(jsonStart);
+                            metadata = json::parse(jsonStr);
+                            foundMetadata = true;
+                            if (part.name == "metadata") break;
+                        }
+                    }
+                }
+
+                if (!foundMetadata) {
+                    return Response::badRequest("No metadata found in request");
+                }
+
+                std::vector<std::pair<std::string, std::vector<uint8_t>>> files;
+                for (const auto& part : req.parts) {
+                    if (part.isFile()) {
+                        files.emplace_back(part.filename, part.data);
+                    }
+                }
+
+                std::string result = uploadHandler.handleUpload(files, metadata);
+                return Response::created(result);
+
+            } catch (const json::parse_error& e) {
+                return Response::badRequest(std::string("Invalid JSON: ") + e.what());
+            } catch (const std::exception& e) {
+                return Response::error(e.what());
             }
         },
         HttpRequest::POST,
         "/api/upload"
     );
     server->add_endpoint(upload_ep);
+
+    // ============================================
+    // GET /health - Health check endpoint
+    // ============================================
+    endpoint health_check(
+        [](const Request&) -> Response {
+            json response;
+            response["status"] = "ok";
+            response["service"] = "TheWhisperDB";
+            response["nodes_count"] = db->getSize();
+
+            return Response::ok(response.dump());
+        },
+        HttpRequest::GET,
+        "/health"
+    );
+    server->add_endpoint(health_check);
+
+    // ============================================
+    // POST /test - Test endpoint
+    // ============================================
+    endpoint test_ep(
+        [](const Request& req) -> Response {
+            std::string response = "Test endpoint. Got " + std::to_string(req.parts.size()) + " parts.\n";
+            for (size_t i = 0; i < req.parts.size(); ++i) {
+                response += "Part " + std::to_string(i) + ": ";
+                response += "name=\"" + req.parts[i].name + "\"";
+                if (!req.parts[i].filename.empty()) {
+                    response += ", filename=\"" + req.parts[i].filename + "\"";
+                }
+                response += ", size=" + std::to_string(req.parts[i].data.size()) + " bytes\n";
+            }
+
+            if (!req.query.empty()) {
+                response += "Query params:\n";
+                for (const auto& [key, value] : req.query) {
+                    response += "  " + key + "=" + value + "\n";
+                }
+            }
+
+            return {200, "text/plain", response};
+        },
+        HttpRequest::POST,
+        "/test"
+    );
+    server->add_endpoint(test_ep);
+
+    std::cout << "TheWhisperDB REST API" << std::endl;
+    std::cout << "Endpoints:" << std::endl;
+    std::cout << "  GET    /api/nodes          - List all nodes" << std::endl;
+    std::cout << "  GET    /api/nodes/:id      - Get node by ID" << std::endl;
+    std::cout << "  POST   /api/nodes          - Create new node" << std::endl;
+    std::cout << "  PUT    /api/nodes/:id      - Update node" << std::endl;
+    std::cout << "  DELETE /api/nodes/:id      - Delete node" << std::endl;
+    std::cout << "  GET    /api/nodes/:id/files - Get node files" << std::endl;
+    std::cout << "  POST   /api/nodes/:id/files - Add file to node" << std::endl;
+    std::cout << "  POST   /api/upload          - Legacy upload" << std::endl;
+    std::cout << "  GET    /health              - Health check" << std::endl;
+    std::cout << std::endl;
 
     server->run(8080);
 }
