@@ -105,7 +105,18 @@ void GraphDB::loadFromJson() {
 void GraphDB::createJson() {
     nodes.clear();
     this->setSize(0);
+
+    // Создаем директорию если не существует
+    std::filesystem::path dbPath(DB_FILE_PATH);
+    if (dbPath.has_parent_path()) {
+        std::filesystem::create_directories(dbPath.parent_path());
+    }
+
     std::ofstream file(DB_FILE_PATH);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to create database file: " + DB_FILE_PATH);
+    }
+
     nlohmann::json j;
     j["nodes"] = nlohmann::json::array();
     j["size"] = getSize();
@@ -113,9 +124,15 @@ void GraphDB::createJson() {
 }
 
 void GraphDB::saveToJson() {
+    // Создаем директорию если не существует
+    std::filesystem::path dbPath(DB_FILE_PATH);
+    if (dbPath.has_parent_path()) {
+        std::filesystem::create_directories(dbPath.parent_path());
+    }
+
     std::ofstream file(DB_FILE_PATH);
     if (!file.is_open()) {
-        throw std::runtime_error("Failed to open database file for writing");
+        throw std::runtime_error("Failed to open database file for writing: " + DB_FILE_PATH);
     }
 
     nlohmann::json j;

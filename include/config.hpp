@@ -1,4 +1,6 @@
-// filepath: /home/kzs/CPP/WGEngine/include/config.hpp
 #pragma once
 #include <string>
-const std::string DB_FILE_PATH = "/home/kzs/TheWhisperDB/data/database.wdb";
+
+// Путь к файлу базы данных (относительно рабочей директории)
+// Директория создается автоматически при первом запуске
+const std::string DB_FILE_PATH = "./data/database.wdb";
