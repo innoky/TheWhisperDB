@@ -304,58 +304,6 @@ int main()
     server->add_endpoint(add_file_to_node);
 
     // ============================================
-    // Legacy endpoint: POST /api/upload
-    // (kept for backward compatibility)
-    // ============================================
-    endpoint upload_ep(
-        [&uploadHandler](const Request& req) -> Response {
-            if (req.parts.empty()) {
-                return Response::badRequest("No data received");
-            }
-
-            try {
-                json metadata;
-                bool foundMetadata = false;
-
-                for (const auto& part : req.parts) {
-                    if (part.name == "metadata" || (!part.isFile() && !foundMetadata)) {
-                        std::string jsonStr = part.dataAsString();
-                        size_t jsonStart = jsonStr.find('{');
-                        if (jsonStart != std::string::npos) {
-                            jsonStr = jsonStr.substr(jsonStart);
-                            metadata = json::parse(jsonStr);
-                            foundMetadata = true;
-                            if (part.name == "metadata") break;
-                        }
-                    }
-                }
-
-                if (!foundMetadata) {
-                    return Response::badRequest("No metadata found in request");
-                }
-
-                std::vector<std::pair<std::string, std::vector<uint8_t>>> files;
-                for (const auto& part : req.parts) {
-                    if (part.isFile()) {
-                        files.emplace_back(part.filename, part.data);
-                    }
-                }
-
-                std::string result = uploadHandler.handleUpload(files, metadata);
-                return Response::created(result);
-
-            } catch (const json::parse_error& e) {
-                return Response::badRequest(std::string("Invalid JSON: ") + e.what());
-            } catch (const std::exception& e) {
-                return Response::error(e.what());
-            }
-        },
-        HttpRequest::POST,
-        "/api/upload"
-    );
-    server->add_endpoint(upload_ep);
-
-    // ============================================
     // GET /health - Health check endpoint
     // ============================================
     endpoint health_check(
