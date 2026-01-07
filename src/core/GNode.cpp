@@ -52,6 +52,10 @@ Node::Node(const nlohmann::json& j, int id){
     if (j.contains("LinkedNodes") && j["LinkedNodes"].is_array()) {
         LinkedNodes = j["LinkedNodes"].get<std::vector<int>>();
     }
+
+    if (j.contains("embedding") && j["embedding"].is_array()) {
+        embedding = j["embedding"].get<std::vector<float>>();
+    }
 }
 
 Node::Node(const nlohmann::json& j){
@@ -104,11 +108,15 @@ Node::Node(const nlohmann::json& j){
     if (j.contains("LinkedNodes") && j["LinkedNodes"].is_array()) {
         LinkedNodes = j["LinkedNodes"].get<std::vector<int>>();
     }
+
+    if (j.contains("embedding") && j["embedding"].is_array()) {
+        embedding = j["embedding"].get<std::vector<float>>();
+    }
 }
 
 
 nlohmann::json Node::to_json() const {
-    return {
+    nlohmann::json j = {
         {"id", id},
         {"title", title},
         {"course", course},
@@ -120,6 +128,12 @@ nlohmann::json Node::to_json() const {
         {"storage_path", storage_path},
         {"LinkedNodes", LinkedNodes}
     };
+
+    if (!embedding.empty()) {
+        j["embedding"] = embedding;
+    }
+
+    return j;
 }
 
 
@@ -183,5 +197,9 @@ void Node::updateFromJson(const nlohmann::json& j) {
 
     if (j.contains("LinkedNodes") && j["LinkedNodes"].is_array()) {
         LinkedNodes = j["LinkedNodes"].get<std::vector<int>>();
+    }
+
+    if (j.contains("embedding") && j["embedding"].is_array()) {
+        embedding = j["embedding"].get<std::vector<float>>();
     }
 }

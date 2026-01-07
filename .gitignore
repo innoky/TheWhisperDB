@@ -4,7 +4,7 @@ cmake-build-*/
 CMakeFiles/
 CMakeCache.txt
 Makefile
-
+CLAUDE_CONV/
 # VS Code settings
 .vscode/
 *.code-workspace
