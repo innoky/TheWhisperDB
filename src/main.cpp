@@ -527,12 +527,13 @@ int main()
 
                 // Get all nodes with embeddings and calculate similarity
                 auto allNodes = db->getAllNodes();
-                std::vector<std::pair<int, float>> similarities;
+                std::vector<std::pair<std::string, float>> similarities;
 
-                for (const auto& other : allNodes) {
+                for (const auto& otherJson : allNodes) {
+                    Node other(otherJson);
                     if (other.getId() != node.getId() && other.hasEmbedding()) {
                         float sim = Clustering::cosineSimilarity(node.getEmbedding(), other.getEmbedding());
-                        similarities.emplace_back(other.getId(), sim);
+                        similarities.emplace_back(std::to_string(other.getId()), sim);
                     }
                 }
 
