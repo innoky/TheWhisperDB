@@ -11,6 +11,7 @@
 #include "http/Request.hpp"
 #include "embedding/EmbeddingService.hpp"
 #include "embedding/Clustering.hpp"
+#include "tagging/TagService.hpp"
 #include <algorithm>
 
 using json = nlohmann::json;
@@ -20,6 +21,7 @@ using whisperdb::http::MultipartPart;
 
 std::shared_ptr<GraphDB> db;
 std::unique_ptr<EmbeddingService> embeddingService;
+std::unique_ptr<TagService> tagService;
 const std::string STORAGE_PATH = "./storage";
 
 void signal_handler(int signum) {
@@ -38,12 +40,21 @@ int main()
     std::signal(SIGINT, signal_handler);
 
     // Initialize embedding service if API key is set
-    const char* apiKey = std::getenv("OPENAI_API_KEY");
-    if (apiKey) {
-        embeddingService = std::make_unique<EmbeddingService>(*db, apiKey);
-        std::cout << "Embedding service initialized" << std::endl;
+    const char* openaiKey = std::getenv("OPENAI_API_KEY");
+    if (openaiKey) {
+        embeddingService = std::make_unique<EmbeddingService>(*db, openaiKey);
+        std::cout << "Embedding service initialized (OpenAI)" << std::endl;
     } else {
         std::cout << "Warning: OPENAI_API_KEY not set, embedding features disabled" << std::endl;
+    }
+
+    // Initialize tag service if DeepSeek API key is set
+    const char* deepseekKey = std::getenv("DEEPSEEK_API_KEY");
+    if (deepseekKey) {
+        tagService = std::make_unique<TagService>(*db, deepseekKey);
+        std::cout << "Tag service initialized (DeepSeek)" << std::endl;
+    } else {
+        std::cout << "Warning: DEEPSEEK_API_KEY not set, tag generation disabled" << std::endl;
     }
 
     auto server = std::make_shared<wServer>();
@@ -565,6 +576,109 @@ int main()
     );
     server->add_endpoint(get_similar_nodes);
 
+    // ============================================
+    // POST /api/nodes/:id/tags - Generate tags for a node using DeepSeek
+    // ============================================
+    endpoint generate_tags(
+        [](const Request& req) -> Response {
+            if (!tagService) {
+                return Response::error("Tag service not initialized. Set DEEPSEEK_API_KEY environment variable.");
+            }
+
+            std::string idStr = req.getParam("id");
+            if (!db->exists(idStr)) {
+                return Response::notFound("Node not found: " + idStr);
+            }
+
+            try {
+                int id = std::stoi(idStr);
+                TagGenerationResult result = tagService->generateTagsForNode(id, STORAGE_PATH);
+
+                if (result.success) {
+                    json response;
+                    response["status"] = "success";
+                    response["nodeId"] = id;
+                    response["tags"] = result.generatedTags;
+                    response["newTagsAdded"] = result.newTagsAdded;
+                    response["linkedNodes"] = result.linkedNodeIds;
+                    return Response::ok(response.dump());
+                } else {
+                    return Response::error(result.error);
+                }
+            } catch (const std::exception& e) {
+                return Response::error(e.what());
+            }
+        },
+        HttpRequest::POST,
+        "/api/nodes/:id/tags"
+    );
+    server->add_endpoint(generate_tags);
+
+    // ============================================
+    // GET /api/tags - Get the tag bank
+    // ============================================
+    endpoint get_tag_bank(
+        [](const Request&) -> Response {
+            json response;
+            response["status"] = "success";
+            response["tagBank"] = db->getTagBank();
+            response["count"] = db->getTagBank().size();
+            return Response::ok(response.dump());
+        },
+        HttpRequest::GET,
+        "/api/tags"
+    );
+    server->add_endpoint(get_tag_bank);
+
+    // ============================================
+    // GET /api/tags/:tag/nodes - Get nodes with a specific tag
+    // ============================================
+    endpoint get_nodes_by_tag(
+        [](const Request& req) -> Response {
+            std::string tag = req.getParam("tag");
+            auto nodeIds = db->findNodesByTag(tag);
+
+            json nodes = json::array();
+            for (int id : nodeIds) {
+                std::string idStr = std::to_string(id);
+                if (db->exists(idStr)) {
+                    nodes.push_back(db->find(idStr).to_json());
+                }
+            }
+
+            json response;
+            response["status"] = "success";
+            response["tag"] = tag;
+            response["nodes"] = nodes;
+            response["count"] = nodes.size();
+            return Response::ok(response.dump());
+        },
+        HttpRequest::GET,
+        "/api/tags/:tag/nodes"
+    );
+    server->add_endpoint(get_nodes_by_tag);
+
+    // ============================================
+    // POST /api/tags/link-all - Batch update all tag-based links
+    // ============================================
+    endpoint update_tag_links(
+        [](const Request&) -> Response {
+            if (!tagService) {
+                return Response::error("Tag service not initialized. Set DEEPSEEK_API_KEY environment variable.");
+            }
+
+            int linksCreated = tagService->updateAllTagBasedLinks();
+
+            json response;
+            response["status"] = "success";
+            response["linksCreated"] = linksCreated;
+            return Response::ok(response.dump());
+        },
+        HttpRequest::POST,
+        "/api/tags/link-all"
+    );
+    server->add_endpoint(update_tag_links);
+
     std::cout << "TheWhisperDB REST API" << std::endl;
     std::cout << "Endpoints:" << std::endl;
     std::cout << "  GET    /api/nodes              - List all nodes (supports: ?sort=<field>&order=<asc|desc>&limit=<n>&offset=<n>)" << std::endl;
@@ -577,13 +691,18 @@ int main()
     std::cout << "  POST   /api/nodes/:id/files    - Add file to node" << std::endl;
     std::cout << "  POST   /api/nodes/:id/embedding - Generate embedding for node" << std::endl;
     std::cout << "  GET    /api/nodes/:id/similar  - Get similar nodes" << std::endl;
+    std::cout << "  POST   /api/nodes/:id/tags     - Generate tags for node (DeepSeek)" << std::endl;
     std::cout << "  POST   /api/cluster            - Run clustering batch job (?threshold=0.75)" << std::endl;
+    std::cout << "  GET    /api/tags               - Get tag bank" << std::endl;
+    std::cout << "  GET    /api/tags/:tag/nodes    - Get nodes by tag" << std::endl;
+    std::cout << "  POST   /api/tags/link-all      - Update all tag-based links" << std::endl;
     std::cout << "  GET    /health                 - Health check" << std::endl;
     std::cout << std::endl;
     std::cout << "Supported sort fields: id, title, author, subject, course, date" << std::endl;
     std::cout << "Supported filters: subject, author, course, title, tag" << std::endl;
     std::cout << std::endl;
     std::cout << "Embedding: Set OPENAI_API_KEY environment variable to enable" << std::endl;
+    std::cout << "Tagging:   Set DEEPSEEK_API_KEY environment variable to enable" << std::endl;
     std::cout << std::endl;
 
     server->run(8080);

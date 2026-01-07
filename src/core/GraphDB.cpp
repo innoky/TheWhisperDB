@@ -283,7 +283,13 @@ void GraphDB::loadFromJson() {
                 }
             }
         }
-        
+
+        // Load tag bank
+        tagBank_.clear();
+        if (j.contains("tagBank") && j["tagBank"].is_array()) {
+            tagBank_ = j["tagBank"].get<std::vector<std::string>>();
+        }
+
         setSize(j.value("size", 0));
     } catch (const nlohmann::json::parse_error& e) {
         std::cerr << "JSON parse error: " << e.what() << std::endl;
@@ -296,6 +302,7 @@ void GraphDB::loadFromJson() {
 
 void GraphDB::createJson() {
     nodes.clear();
+    tagBank_.clear();
     this->setSize(0);
 
     // Создаем директорию если не существует
@@ -311,6 +318,7 @@ void GraphDB::createJson() {
 
     nlohmann::json j;
     j["nodes"] = nlohmann::json::array();
+    j["tagBank"] = nlohmann::json::array();
     j["size"] = getSize();
     file << j.dump(4);
 }
@@ -358,6 +366,9 @@ void GraphDB::saveToJson() {
     for (const auto& [nodeId, files] : nodeFiles) {
         j["nodeFiles"][nodeId] = files;
     }
+
+    // Save tag bank
+    j["tagBank"] = tagBank_;
 
     file << j.dump(4);
 }
@@ -477,4 +488,59 @@ std::string GraphDB::generateNodeId() {
         nextId++;
     }
     return std::to_string(nextId++);
+}
+
+// Tag bank operations
+void GraphDB::setTagBank(const std::vector<std::string>& tags) {
+    tagBank_ = tags;
+    saveToJson();
+}
+
+void GraphDB::addToTagBank(const std::vector<std::string>& newTags) {
+    for (const auto& tag : newTags) {
+        if (std::find(tagBank_.begin(), tagBank_.end(), tag) == tagBank_.end()) {
+            tagBank_.push_back(tag);
+        }
+    }
+    saveToJson();
+}
+
+std::vector<int> GraphDB::findNodesByTag(const std::string& tag) const {
+    std::vector<int> result;
+    for (const auto& [id, node] : nodes) {
+        auto tags = node->getTags();
+        if (std::find(tags.begin(), tags.end(), tag) != tags.end()) {
+            result.push_back(node->getId());
+        }
+    }
+    return result;
+}
+
+std::vector<int> GraphDB::findNodesWithSharedTags(int nodeId) const {
+    std::vector<int> result;
+    std::string nodeIdStr = std::to_string(nodeId);
+
+    auto it = nodes.find(nodeIdStr);
+    if (it == nodes.end()) {
+        return result;
+    }
+
+    auto nodeTags = it->second->getTags();
+    if (nodeTags.empty()) {
+        return result;
+    }
+
+    for (const auto& [otherId, otherNode] : nodes) {
+        if (otherNode->getId() == nodeId) continue;
+
+        auto otherTags = otherNode->getTags();
+        for (const auto& tag : nodeTags) {
+            if (std::find(otherTags.begin(), otherTags.end(), tag) != otherTags.end()) {
+                result.push_back(otherNode->getId());
+                break;  // Found at least one shared tag
+            }
+        }
+    }
+
+    return result;
 }
