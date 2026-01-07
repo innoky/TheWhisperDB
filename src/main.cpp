@@ -38,12 +38,12 @@ int main()
     std::signal(SIGINT, signal_handler);
 
     // Initialize embedding service if API key is set
-    const char* apiKey = std::getenv("DEEPSEEK_API_KEY");
+    const char* apiKey = std::getenv("OPENAI_API_KEY");
     if (apiKey) {
         embeddingService = std::make_unique<EmbeddingService>(*db, apiKey);
         std::cout << "Embedding service initialized" << std::endl;
     } else {
-        std::cout << "Warning: DEEPSEEK_API_KEY not set, embedding features disabled" << std::endl;
+        std::cout << "Warning: OPENAI_API_KEY not set, embedding features disabled" << std::endl;
     }
 
     auto server = std::make_shared<wServer>();
@@ -430,7 +430,7 @@ int main()
     endpoint run_clustering(
         [](const Request& req) -> Response {
             if (!embeddingService) {
-                return Response::error("Embedding service not initialized. Set DEEPSEEK_API_KEY environment variable.");
+                return Response::error("Embedding service not initialized. Set OPENAI_API_KEY environment variable.");
             }
 
             float threshold = 0.75f;
@@ -470,7 +470,7 @@ int main()
     endpoint generate_embedding(
         [](const Request& req) -> Response {
             if (!embeddingService) {
-                return Response::error("Embedding service not initialized. Set DEEPSEEK_API_KEY environment variable.");
+                return Response::error("Embedding service not initialized. Set OPENAI_API_KEY environment variable.");
             }
 
             std::string idStr = req.getParam("id");
@@ -583,7 +583,7 @@ int main()
     std::cout << "Supported sort fields: id, title, author, subject, course, date" << std::endl;
     std::cout << "Supported filters: subject, author, course, title, tag" << std::endl;
     std::cout << std::endl;
-    std::cout << "Embedding: Set DEEPSEEK_API_KEY environment variable to enable" << std::endl;
+    std::cout << "Embedding: Set OPENAI_API_KEY environment variable to enable" << std::endl;
     std::cout << std::endl;
 
     server->run(8080);
