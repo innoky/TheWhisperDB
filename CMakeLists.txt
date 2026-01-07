@@ -20,6 +20,8 @@ add_executable(server
     src/embedding/TextExtractor.cpp
     src/embedding/Clustering.cpp
     src/embedding/EmbeddingService.cpp
+    src/tagging/TagClient.cpp
+    src/tagging/TagService.cpp
 )
 
 target_include_directories(server PRIVATE ${CMAKE_SOURCE_DIR}/include)

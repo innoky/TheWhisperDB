@@ -41,6 +41,13 @@ public:
 
     // Count nodes (with optional filters)
     int countNodes(const std::unordered_map<std::string, std::string>& filters = {}) const;
+
+    // Tag bank operations
+    std::vector<std::string> getTagBank() const { return tagBank_; }
+    void setTagBank(const std::vector<std::string>& tags);
+    void addToTagBank(const std::vector<std::string>& newTags);
+    std::vector<int> findNodesByTag(const std::string& tag) const;
+    std::vector<int> findNodesWithSharedTags(int nodeId) const;
     
     // File operations
     std::string addFileToNode(const std::string& nodeId, const std::string& filename, const std::string& content);
@@ -58,6 +65,7 @@ public:
 private:
     std::unordered_map<std::string, Node*> nodes; // Map of nodes by their unique ID
     std::unordered_map<std::string, std::vector<std::string>> nodeFiles; // Maps node ID to list of file paths
+    std::vector<std::string> tagBank_; // Global tag bank for AI-generated tags
     int size;
     std::unique_ptr<FileStorage> fileStorage;
     
