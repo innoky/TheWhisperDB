@@ -27,6 +27,8 @@ public:
     std::vector<std::string> getTags() const { return tags; }
     std::string getStoragePath() const { return storage_path; }
     std::vector<int> getLinkedNodes() const { return LinkedNodes; }
+    std::vector<float> getEmbedding() const { return embedding; }
+    bool hasEmbedding() const { return !embedding.empty(); }
 
     // Setters
     void setTitle(const std::string& t) { title = t; }
@@ -38,6 +40,7 @@ public:
     void setTags(const std::vector<std::string>& t) { tags = t; }
     void setStoragePath(const std::string& path) { storage_path = path; }
     void setLinkedNodes(const std::vector<int>& nodes) { LinkedNodes = nodes; }
+    void setEmbedding(const std::vector<float>& emb) { embedding = emb; }
 
     // Update from JSON (partial update)
     void updateFromJson(const nlohmann::json& j);
@@ -53,5 +56,6 @@ private:
     std::vector<std::string> tags; // Tags associated with the node
     std::string storage_path; // Path to the main file associated with this node
 
-    std::vector<int> LinkedNodes; // List of connected node IDs 
+    std::vector<int> LinkedNodes; // List of connected node IDs
+    std::vector<float> embedding; // Vector embedding for semantic similarity
 };

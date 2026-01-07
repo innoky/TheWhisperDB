@@ -1,5 +1,6 @@
 #include <iostream>
 #include <csignal>
+#include <cstdlib>
 #include <nlohmann/json.hpp>
 
 #include "core/GraphDB.hpp"
@@ -8,6 +9,9 @@
 #include "server/UploadHandler.hpp"
 #include "http/MultipartParser.hpp"
 #include "http/Request.hpp"
+#include "embedding/EmbeddingService.hpp"
+#include "embedding/Clustering.hpp"
+#include <algorithm>
 
 using json = nlohmann::json;
 using whisperdb::http::Request;
@@ -15,6 +19,8 @@ using whisperdb::http::Response;
 using whisperdb::http::MultipartPart;
 
 std::shared_ptr<GraphDB> db;
+std::unique_ptr<EmbeddingService> embeddingService;
+const std::string STORAGE_PATH = "./storage";
 
 void signal_handler(int signum) {
     if (signum == SIGINT) {
@@ -30,6 +36,15 @@ int main()
 {
     db = std::make_shared<GraphDB>();
     std::signal(SIGINT, signal_handler);
+
+    // Initialize embedding service if API key is set
+    const char* apiKey = std::getenv("DEEPSEEK_API_KEY");
+    if (apiKey) {
+        embeddingService = std::make_unique<EmbeddingService>(*db, apiKey);
+        std::cout << "Embedding service initialized" << std::endl;
+    } else {
+        std::cout << "Warning: DEEPSEEK_API_KEY not set, embedding features disabled" << std::endl;
+    }
 
     auto server = std::make_shared<wServer>();
     UploadHandler uploadHandler(*db);
@@ -408,21 +423,166 @@ int main()
     );
     server->add_endpoint(test_ep);
 
+    // ============================================
+    // POST /api/cluster - Run clustering batch job
+    // Query params: threshold (default: 0.75)
+    // ============================================
+    endpoint run_clustering(
+        [](const Request& req) -> Response {
+            if (!embeddingService) {
+                return Response::error("Embedding service not initialized. Set DEEPSEEK_API_KEY environment variable.");
+            }
+
+            float threshold = 0.75f;
+            if (req.hasQuery("threshold")) {
+                try {
+                    threshold = std::stof(req.getQuery("threshold"));
+                } catch (...) {
+                    return Response::badRequest("Invalid threshold parameter");
+                }
+            }
+
+            try {
+                std::cout << "Starting clustering with threshold " << threshold << std::endl;
+                ClusteringResult result = embeddingService->runClustering(STORAGE_PATH, threshold);
+
+                json response;
+                response["status"] = "success";
+                response["nodesProcessed"] = result.nodesProcessed;
+                response["embeddingsGenerated"] = result.embeddingsGenerated;
+                response["linksCreated"] = result.linksCreated;
+                response["clustersFound"] = result.clustersFound;
+                response["clusters"] = result.clusters;
+
+                return Response::ok(response.dump());
+            } catch (const std::exception& e) {
+                return Response::error(e.what());
+            }
+        },
+        HttpRequest::POST,
+        "/api/cluster"
+    );
+    server->add_endpoint(run_clustering);
+
+    // ============================================
+    // POST /api/nodes/:id/embedding - Generate embedding for single node
+    // ============================================
+    endpoint generate_embedding(
+        [](const Request& req) -> Response {
+            if (!embeddingService) {
+                return Response::error("Embedding service not initialized. Set DEEPSEEK_API_KEY environment variable.");
+            }
+
+            std::string idStr = req.getParam("id");
+            if (!db->exists(idStr)) {
+                return Response::notFound("Node not found: " + idStr);
+            }
+
+            try {
+                int id = std::stoi(idStr);
+                bool success = embeddingService->generateEmbedding(id, STORAGE_PATH);
+
+                if (success) {
+                    json response;
+                    response["status"] = "success";
+                    response["message"] = "Embedding generated";
+                    response["nodeId"] = id;
+                    return Response::ok(response.dump());
+                } else {
+                    return Response::error("Failed to generate embedding");
+                }
+            } catch (const std::exception& e) {
+                return Response::error(e.what());
+            }
+        },
+        HttpRequest::POST,
+        "/api/nodes/:id/embedding"
+    );
+    server->add_endpoint(generate_embedding);
+
+    // ============================================
+    // GET /api/nodes/:id/similar - Get similar nodes
+    // Query params: limit (default: 10)
+    // ============================================
+    endpoint get_similar_nodes(
+        [](const Request& req) -> Response {
+            std::string idStr = req.getParam("id");
+            if (!db->exists(idStr)) {
+                return Response::notFound("Node not found: " + idStr);
+            }
+
+            try {
+                Node node = db->find(idStr);
+
+                if (!node.hasEmbedding()) {
+                    return Response::badRequest("Node has no embedding. Generate embedding first.");
+                }
+
+                int limit = 10;
+                if (req.hasQuery("limit")) {
+                    try {
+                        limit = std::stoi(req.getQuery("limit"));
+                    } catch (...) {}
+                }
+
+                // Get all nodes with embeddings and calculate similarity
+                auto allNodes = db->getAllNodes();
+                std::vector<std::pair<int, float>> similarities;
+
+                for (const auto& other : allNodes) {
+                    if (other.getId() != node.getId() && other.hasEmbedding()) {
+                        float sim = Clustering::cosineSimilarity(node.getEmbedding(), other.getEmbedding());
+                        similarities.emplace_back(other.getId(), sim);
+                    }
+                }
+
+                // Sort by similarity descending
+                std::sort(similarities.begin(), similarities.end(),
+                    [](const auto& a, const auto& b) { return a.second > b.second; });
+
+                // Take top N
+                json similarNodes = json::array();
+                for (int i = 0; i < std::min(limit, (int)similarities.size()); ++i) {
+                    Node similarNode = db->find(similarities[i].first);
+                    json nodeJson = similarNode.to_json();
+                    nodeJson["similarity"] = similarities[i].second;
+                    similarNodes.push_back(nodeJson);
+                }
+
+                json response;
+                response["status"] = "success";
+                response["nodeId"] = idStr;
+                response["similarNodes"] = similarNodes;
+
+                return Response::ok(response.dump());
+            } catch (const std::exception& e) {
+                return Response::error(e.what());
+            }
+        },
+        HttpRequest::GET,
+        "/api/nodes/:id/similar"
+    );
+    server->add_endpoint(get_similar_nodes);
+
     std::cout << "TheWhisperDB REST API" << std::endl;
     std::cout << "Endpoints:" << std::endl;
-    std::cout << "  GET    /api/nodes          - List all nodes (supports: ?sort=<field>&order=<asc|desc>&limit=<n>&offset=<n>)" << std::endl;
-    std::cout << "  GET    /api/nodes/count    - Count nodes (supports filters)" << std::endl;
-    std::cout << "  GET    /api/nodes/:id      - Get node by ID" << std::endl;
-    std::cout << "  POST   /api/nodes          - Create new node" << std::endl;
-    std::cout << "  PUT    /api/nodes/:id      - Update node" << std::endl;
-    std::cout << "  DELETE /api/nodes/:id      - Delete node" << std::endl;
-    std::cout << "  GET    /api/nodes/:id/files - Get node files" << std::endl;
-    std::cout << "  POST   /api/nodes/:id/files - Add file to node" << std::endl;
-    std::cout << "  POST   /api/upload          - Legacy upload" << std::endl;
-    std::cout << "  GET    /health              - Health check" << std::endl;
+    std::cout << "  GET    /api/nodes              - List all nodes (supports: ?sort=<field>&order=<asc|desc>&limit=<n>&offset=<n>)" << std::endl;
+    std::cout << "  GET    /api/nodes/count        - Count nodes (supports filters)" << std::endl;
+    std::cout << "  GET    /api/nodes/:id          - Get node by ID" << std::endl;
+    std::cout << "  POST   /api/nodes              - Create new node" << std::endl;
+    std::cout << "  PUT    /api/nodes/:id          - Update node" << std::endl;
+    std::cout << "  DELETE /api/nodes/:id          - Delete node" << std::endl;
+    std::cout << "  GET    /api/nodes/:id/files    - Get node files" << std::endl;
+    std::cout << "  POST   /api/nodes/:id/files    - Add file to node" << std::endl;
+    std::cout << "  POST   /api/nodes/:id/embedding - Generate embedding for node" << std::endl;
+    std::cout << "  GET    /api/nodes/:id/similar  - Get similar nodes" << std::endl;
+    std::cout << "  POST   /api/cluster            - Run clustering batch job (?threshold=0.75)" << std::endl;
+    std::cout << "  GET    /health                 - Health check" << std::endl;
     std::cout << std::endl;
     std::cout << "Supported sort fields: id, title, author, subject, course, date" << std::endl;
     std::cout << "Supported filters: subject, author, course, title, tag" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Embedding: Set DEEPSEEK_API_KEY environment variable to enable" << std::endl;
     std::cout << std::endl;
 
     server->run(8080);
