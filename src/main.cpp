@@ -679,6 +679,38 @@ int main()
     );
     server->add_endpoint(update_tag_links);
 
+    // ============================================
+    // GET /api/clusters - Get all connected components
+    // ============================================
+    endpoint get_clusters(
+        [](const Request&) -> Response {
+            if (!tagService) {
+                return Response::error("Tag service not initialized. Set DEEPSEEK_API_KEY environment variable.");
+            }
+
+            auto clusters = tagService->getClusters();
+
+            json response;
+            response["status"] = "success";
+            response["count"] = clusters.size();
+            response["clusters"] = json::array();
+
+            for (const auto& cluster : clusters) {
+                json c;
+                c["id"] = cluster.id;
+                c["nodes"] = cluster.nodeIds;
+                c["size"] = cluster.nodeIds.size();
+                c["sharedTags"] = cluster.sharedTags;
+                response["clusters"].push_back(c);
+            }
+
+            return Response::ok(response.dump());
+        },
+        HttpRequest::GET,
+        "/api/clusters"
+    );
+    server->add_endpoint(get_clusters);
+
     std::cout << "TheWhisperDB REST API" << std::endl;
     std::cout << "Endpoints:" << std::endl;
     std::cout << "  GET    /api/nodes              - List all nodes (supports: ?sort=<field>&order=<asc|desc>&limit=<n>&offset=<n>)" << std::endl;
@@ -696,6 +728,7 @@ int main()
     std::cout << "  GET    /api/tags               - Get tag bank" << std::endl;
     std::cout << "  GET    /api/tags/:tag/nodes    - Get nodes by tag" << std::endl;
     std::cout << "  POST   /api/tags/link-all      - Update all tag-based links" << std::endl;
+    std::cout << "  GET    /api/clusters           - Get connected components" << std::endl;
     std::cout << "  GET    /health                 - Health check" << std::endl;
     std::cout << std::endl;
     std::cout << "Supported sort fields: id, title, author, subject, course, date" << std::endl;

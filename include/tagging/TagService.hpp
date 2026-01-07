@@ -13,6 +13,12 @@ struct TagGenerationResult {
     std::string error;
 };
 
+struct ClusterInfo {
+    int id;
+    std::vector<int> nodeIds;
+    std::vector<std::string> sharedTags;
+};
+
 class TagService {
 public:
     TagService(GraphDB& db, const std::string& apiKey);
@@ -34,6 +40,9 @@ public:
 
     // Batch: update all node links based on tags
     int updateAllTagBasedLinks();
+
+    // Get all connected components (clusters)
+    std::vector<ClusterInfo> getClusters() const;
 
     // Set model name
     void setModel(const std::string& model) { client_.setModel(model); }
