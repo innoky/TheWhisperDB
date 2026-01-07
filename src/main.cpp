@@ -35,14 +35,14 @@ int main()
     UploadHandler uploadHandler(*db);
 
     // ============================================
-    // GET /api/nodes - List all nodes with optional filters
-    // Query params: subject, author, course, title, tag
+    // GET /api/nodes - List all nodes with optional filters, sorting, and pagination
+    // Query params: subject, author, course, title, tag, sort, order, limit, offset
     // ============================================
     endpoint get_nodes(
         [](const Request& req) -> Response {
             json response;
 
-            // Check if there are any filters
+            // Extract filters
             std::unordered_map<std::string, std::string> filters;
             for (const auto& [key, value] : req.query) {
                 if (key == "subject" || key == "author" || key == "course" ||
@@ -51,16 +51,47 @@ int main()
                 }
             }
 
+            // Extract sorting parameters
+            std::string sortBy = req.hasQuery("sort") ? req.getQuery("sort") : "id";
+            std::string order = req.hasQuery("order") ? req.getQuery("order") : "asc";
+
+            // Extract pagination parameters
+            int limit = -1;  // -1 means no limit
+            int offset = 0;
+
+            if (req.hasQuery("limit")) {
+                try {
+                    limit = std::stoi(req.getQuery("limit"));
+                } catch (...) {
+                    return Response::badRequest("Invalid limit parameter");
+                }
+            }
+
+            if (req.hasQuery("offset")) {
+                try {
+                    offset = std::stoi(req.getQuery("offset"));
+                } catch (...) {
+                    return Response::badRequest("Invalid offset parameter");
+                }
+            }
+
+            // Get nodes with filtering, sorting, and pagination
             json nodes;
             if (filters.empty()) {
-                nodes = db->getAllNodes();
+                nodes = db->getAllNodes(sortBy, order, limit, offset);
             } else {
-                nodes = db->findNodes(filters);
+                nodes = db->findNodes(filters, sortBy, order, limit, offset);
             }
 
             response["status"] = "success";
             response["count"] = nodes.size();
             response["nodes"] = nodes;
+
+            // Add metadata for pagination
+            if (limit > 0) {
+                response["limit"] = limit;
+                response["offset"] = offset;
+            }
 
             return Response::ok(response.dump());
         },
@@ -68,6 +99,34 @@ int main()
         "/api/nodes"
     );
     server->add_endpoint(get_nodes);
+
+    // ============================================
+    // GET /api/nodes/count - Count nodes with optional filters
+    // Query params: subject, author, course, title, tag (same as /api/nodes)
+    // ============================================
+    endpoint count_nodes(
+        [](const Request& req) -> Response {
+            // Extract filters (same logic as get_nodes)
+            std::unordered_map<std::string, std::string> filters;
+            for (const auto& [key, value] : req.query) {
+                if (key == "subject" || key == "author" || key == "course" ||
+                    key == "title" || key == "tag") {
+                    filters[key] = value;
+                }
+            }
+
+            int count = db->countNodes(filters);
+
+            json response;
+            response["status"] = "success";
+            response["count"] = count;
+
+            return Response::ok(response.dump());
+        },
+        HttpRequest::GET,
+        "/api/nodes/count"
+    );
+    server->add_endpoint(count_nodes);
 
     // ============================================
     // GET /api/nodes/:id - Get single node by ID
@@ -403,7 +462,8 @@ int main()
 
     std::cout << "TheWhisperDB REST API" << std::endl;
     std::cout << "Endpoints:" << std::endl;
-    std::cout << "  GET    /api/nodes          - List all nodes" << std::endl;
+    std::cout << "  GET    /api/nodes          - List all nodes (supports: ?sort=<field>&order=<asc|desc>&limit=<n>&offset=<n>)" << std::endl;
+    std::cout << "  GET    /api/nodes/count    - Count nodes (supports filters)" << std::endl;
     std::cout << "  GET    /api/nodes/:id      - Get node by ID" << std::endl;
     std::cout << "  POST   /api/nodes          - Create new node" << std::endl;
     std::cout << "  PUT    /api/nodes/:id      - Update node" << std::endl;
@@ -412,6 +472,9 @@ int main()
     std::cout << "  POST   /api/nodes/:id/files - Add file to node" << std::endl;
     std::cout << "  POST   /api/upload          - Legacy upload" << std::endl;
     std::cout << "  GET    /health              - Health check" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Supported sort fields: id, title, author, subject, course, date" << std::endl;
+    std::cout << "Supported filters: subject, author, course, title, tag" << std::endl;
     std::cout << std::endl;
 
     server->run(8080);

@@ -1,12 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
-cmake_policy(SET CMP0167 NEW)
 
 project(whisperdb LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Boost CONFIG REQUIRED)
+find_package(Boost REQUIRED)
 
 add_executable(server
     src/main.cpp
