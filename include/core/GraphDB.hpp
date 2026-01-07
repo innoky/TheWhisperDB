@@ -24,8 +24,23 @@ public:
     bool deleteNode(const std::string& id);
 
     // Query operations
-    nlohmann::json getAllNodes() const;
-    nlohmann::json findNodes(const std::unordered_map<std::string, std::string>& filters) const;
+    nlohmann::json getAllNodes(
+        const std::string& sortBy = "id",
+        const std::string& order = "asc",
+        int limit = -1,
+        int offset = 0
+    ) const;
+
+    nlohmann::json findNodes(
+        const std::unordered_map<std::string, std::string>& filters,
+        const std::string& sortBy = "id",
+        const std::string& order = "asc",
+        int limit = -1,
+        int offset = 0
+    ) const;
+
+    // Count nodes (with optional filters)
+    int countNodes(const std::unordered_map<std::string, std::string>& filters = {}) const;
     
     // File operations
     std::string addFileToNode(const std::string& nodeId, const std::string& filename, const std::string& content);

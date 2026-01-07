@@ -42,34 +42,71 @@ bool GraphDB::exists(const std::string& id) const
     return nodes.find(id) != nodes.end();
 }
 
-nlohmann::json GraphDB::getAllNodes() const
+nlohmann::json GraphDB::getAllNodes(
+    const std::string& sortBy,
+    const std::string& order,
+    int limit,
+    int offset
+) const
 {
     nlohmann::json result = nlohmann::json::array();
 
-    // Sort by ID for consistent output
-    std::vector<std::pair<int, Node*>> sorted_nodes;
-    for (const auto& pair : nodes) {
-        try {
-            int nodeId = std::stoi(pair.first);
-            sorted_nodes.emplace_back(nodeId, pair.second);
-        } catch (...) {
-            result.push_back(pair.second->to_json());
-        }
+    // Collect all nodes into a vector for sorting
+    std::vector<Node*> node_list;
+    for (const auto& [id, node] : nodes) {
+        node_list.push_back(node);
     }
 
-    std::sort(sorted_nodes.begin(), sorted_nodes.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
+    // Sort nodes based on sortBy parameter
+    std::sort(node_list.begin(), node_list.end(),
+        [&sortBy, &order](const Node* a, const Node* b) {
+            bool ascending = (order == "asc");
 
-    for (const auto& [_, node] : sorted_nodes) {
-        result.push_back(node->to_json());
+            if (sortBy == "id") {
+                return ascending ? (a->getId() < b->getId()) : (a->getId() > b->getId());
+            } else if (sortBy == "title") {
+                return ascending ? (a->getTitle() < b->getTitle()) : (a->getTitle() > b->getTitle());
+            } else if (sortBy == "author") {
+                return ascending ? (a->getAuthor() < b->getAuthor()) : (a->getAuthor() > b->getAuthor());
+            } else if (sortBy == "subject") {
+                return ascending ? (a->getSubject() < b->getSubject()) : (a->getSubject() > b->getSubject());
+            } else if (sortBy == "course") {
+                return ascending ? (a->getCourse() < b->getCourse()) : (a->getCourse() > b->getCourse());
+            } else if (sortBy == "date") {
+                return ascending ? (a->getDate() < b->getDate()) : (a->getDate() > b->getDate());
+            } else {
+                // Default: sort by ID
+                return ascending ? (a->getId() < b->getId()) : (a->getId() > b->getId());
+            }
+        }
+    );
+
+    // Apply offset and limit
+    size_t start = (offset >= 0) ? static_cast<size_t>(offset) : 0;
+    size_t end = node_list.size();
+
+    if (limit > 0) {
+        end = std::min(start + static_cast<size_t>(limit), node_list.size());
+    }
+
+    // Build result array
+    for (size_t i = start; i < end; ++i) {
+        result.push_back(node_list[i]->to_json());
     }
 
     return result;
 }
 
-nlohmann::json GraphDB::findNodes(const std::unordered_map<std::string, std::string>& filters) const
+nlohmann::json GraphDB::findNodes(
+    const std::unordered_map<std::string, std::string>& filters,
+    const std::string& sortBy,
+    const std::string& order,
+    int limit,
+    int offset
+) const
 {
-    nlohmann::json result = nlohmann::json::array();
+    // First, filter nodes
+    std::vector<Node*> filtered_nodes;
 
     for (const auto& [id, node] : nodes) {
         bool match = true;
@@ -97,8 +134,44 @@ nlohmann::json GraphDB::findNodes(const std::unordered_map<std::string, std::str
         }
 
         if (match) {
-            result.push_back(node->to_json());
+            filtered_nodes.push_back(node);
         }
+    }
+
+    // Sort filtered nodes
+    std::sort(filtered_nodes.begin(), filtered_nodes.end(),
+        [&sortBy, &order](const Node* a, const Node* b) {
+            bool ascending = (order == "asc");
+
+            if (sortBy == "id") {
+                return ascending ? (a->getId() < b->getId()) : (a->getId() > b->getId());
+            } else if (sortBy == "title") {
+                return ascending ? (a->getTitle() < b->getTitle()) : (a->getTitle() > b->getTitle());
+            } else if (sortBy == "author") {
+                return ascending ? (a->getAuthor() < b->getAuthor()) : (a->getAuthor() > b->getAuthor());
+            } else if (sortBy == "subject") {
+                return ascending ? (a->getSubject() < b->getSubject()) : (a->getSubject() > b->getSubject());
+            } else if (sortBy == "course") {
+                return ascending ? (a->getCourse() < b->getCourse()) : (a->getCourse() > b->getCourse());
+            } else if (sortBy == "date") {
+                return ascending ? (a->getDate() < b->getDate()) : (a->getDate() > b->getDate());
+            } else {
+                return ascending ? (a->getId() < b->getId()) : (a->getId() > b->getId());
+            }
+        }
+    );
+
+    // Apply offset and limit
+    nlohmann::json result = nlohmann::json::array();
+    size_t start = (offset >= 0) ? static_cast<size_t>(offset) : 0;
+    size_t end = filtered_nodes.size();
+
+    if (limit > 0) {
+        end = std::min(start + static_cast<size_t>(limit), filtered_nodes.size());
+    }
+
+    for (size_t i = start; i < end; ++i) {
+        result.push_back(filtered_nodes[i]->to_json());
     }
 
     return result;
@@ -114,6 +187,46 @@ bool GraphDB::updateNode(const std::string& id, const nlohmann::json& updates)
     it->second->updateFromJson(updates);
     saveToJson();
     return true;
+}
+
+int GraphDB::countNodes(const std::unordered_map<std::string, std::string>& filters) const
+{
+    // If no filters, return total count
+    if (filters.empty()) {
+        return static_cast<int>(nodes.size());
+    }
+
+    // Count nodes matching filters
+    int count = 0;
+    for (const auto& [id, node] : nodes) {
+        bool match = true;
+
+        for (const auto& [key, value] : filters) {
+            if (key == "subject") {
+                if (node->getSubject() != value) match = false;
+            } else if (key == "author") {
+                if (node->getAuthor() != value) match = false;
+            } else if (key == "course") {
+                try {
+                    if (node->getCourse() != std::stoi(value)) match = false;
+                } catch (...) { match = false; }
+            } else if (key == "title") {
+                if (node->getTitle().find(value) == std::string::npos) match = false;
+            } else if (key == "tag") {
+                auto tags = node->getTags();
+                bool hasTag = std::find(tags.begin(), tags.end(), value) != tags.end();
+                if (!hasTag) match = false;
+            }
+
+            if (!match) break;
+        }
+
+        if (match) {
+            count++;
+        }
+    }
+
+    return count;
 }
 
 std::string GraphDB::serialize() const
