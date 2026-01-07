@@ -65,7 +65,11 @@ std::optional<std::vector<float>> EmbeddingClient::getEmbedding(const std::strin
     };
 
     try {
-        std::string response = httpPost(baseUrl_ + "/v1/embeddings", requestBody.dump(), headers);
+        std::string url = baseUrl_ + "/v1/embeddings";
+        std::cerr << "DEBUG: Calling " << url << " with model " << model_ << std::endl;
+        std::string response = httpPost(url, requestBody.dump(), headers);
+        std::cerr << "DEBUG: Response (" << response.size() << " bytes): "
+                  << response.substr(0, 500) << std::endl;
         nlohmann::json jsonResponse = nlohmann::json::parse(response);
 
         if (jsonResponse.contains("data") && jsonResponse["data"].is_array() &&
