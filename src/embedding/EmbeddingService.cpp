@@ -43,12 +43,12 @@ std::string EmbeddingService::buildTextForEmbedding(const Node& node, const std:
 }
 
 bool EmbeddingService::generateEmbedding(int nodeId, const std::string& storagePath) {
-    auto nodeOpt = db_.find(nodeId);
-    if (!nodeOpt) {
+    std::string nodeIdStr = std::to_string(nodeId);
+    if (!db_.exists(nodeIdStr)) {
         return false;
     }
 
-    Node& node = *nodeOpt;
+    Node node = db_.find(nodeIdStr);
     std::string text = buildTextForEmbedding(node, storagePath);
 
     auto embedding = client_.getEmbedding(text);
@@ -57,7 +57,7 @@ bool EmbeddingService::generateEmbedding(int nodeId, const std::string& storageP
     }
 
     node.setEmbedding(*embedding);
-    db_.updateNode(nodeId, node.to_json());
+    db_.updateNode(nodeIdStr, node.to_json());
     return true;
 }
 
@@ -65,14 +65,15 @@ int EmbeddingService::generateMissingEmbeddings(const std::string& storagePath) 
     int count = 0;
     auto allNodes = db_.getAllNodes();
 
-    for (auto& node : allNodes) {
+    for (const auto& nodeJson : allNodes) {
+        Node node(nodeJson);
         if (!node.hasEmbedding()) {
             std::string text = buildTextForEmbedding(node, storagePath);
             auto embedding = client_.getEmbedding(text);
 
             if (embedding) {
                 node.setEmbedding(*embedding);
-                db_.updateNode(node.getId(), node.to_json());
+                db_.updateNode(std::to_string(node.getId()), node.to_json());
                 count++;
                 std::cout << "Generated embedding for node " << node.getId() << std::endl;
             }
@@ -89,7 +90,8 @@ int EmbeddingService::updateLinks(float threshold) {
     std::unordered_map<int, std::vector<float>> embeddings;
     std::vector<int> nodeIds;
 
-    for (const auto& node : allNodes) {
+    for (const auto& nodeJson : allNodes) {
+        Node node(nodeJson);
         if (node.hasEmbedding()) {
             embeddings[node.getId()] = node.getEmbedding();
             nodeIds.push_back(node.getId());
@@ -106,7 +108,8 @@ int EmbeddingService::updateLinks(float threshold) {
 
     // Update LinkedNodes for each node
     int linksCreated = 0;
-    for (auto& node : allNodes) {
+    for (const auto& nodeJson : allNodes) {
+        Node node(nodeJson);
         int id = node.getId();
         auto it = adjacencyList.find(id);
 
@@ -127,7 +130,7 @@ int EmbeddingService::updateLinks(float threshold) {
             }
 
             node.setLinkedNodes(newLinks);
-            db_.updateNode(id, node.to_json());
+            db_.updateNode(std::to_string(id), node.to_json());
         }
     }
 
@@ -150,7 +153,8 @@ ClusteringResult EmbeddingService::runClustering(const std::string& storagePath,
     std::unordered_map<int, std::vector<float>> embeddings;
     std::vector<int> nodeIds;
 
-    for (const auto& node : allNodes) {
+    for (const auto& nodeJson : allNodes) {
+        Node node(nodeJson);
         if (node.hasEmbedding()) {
             embeddings[node.getId()] = node.getEmbedding();
             nodeIds.push_back(node.getId());
@@ -170,13 +174,14 @@ ClusteringResult EmbeddingService::runClustering(const std::string& storagePath,
     result.clustersFound = result.clusters.size();
 
     // Update LinkedNodes
-    for (auto& node : allNodes) {
+    for (const auto& nodeJson : allNodes) {
+        Node node(nodeJson);
         int id = node.getId();
         auto it = adjacencyList.find(id);
 
         if (it != adjacencyList.end()) {
             node.setLinkedNodes(it->second);
-            db_.updateNode(id, node.to_json());
+            db_.updateNode(std::to_string(id), node.to_json());
             result.linksCreated += it->second.size();
         }
     }
