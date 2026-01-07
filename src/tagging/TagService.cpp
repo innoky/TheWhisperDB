@@ -3,6 +3,8 @@
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
+#include <unordered_set>
+#include <queue>
 
 TagService::TagService(GraphDB& db, const std::string& apiKey)
     : db_(db), client_(apiKey) {}
@@ -162,4 +164,92 @@ int TagService::updateAllTagBasedLinks() {
     }
 
     return totalLinks;
+}
+
+std::vector<ClusterInfo> TagService::getClusters() const {
+    std::vector<ClusterInfo> clusters;
+    auto allNodes = db_.getAllNodes();
+
+    // Build adjacency map and collect all node IDs
+    std::unordered_map<int, std::vector<int>> adjacency;
+    std::unordered_set<int> allNodeIds;
+
+    for (const auto& nodeJson : allNodes) {
+        Node node(nodeJson);
+        int nodeId = node.getId();
+        allNodeIds.insert(nodeId);
+        adjacency[nodeId] = node.getLinkedNodes();
+    }
+
+    // Find connected components using BFS
+    std::unordered_set<int> visited;
+    int clusterId = 1;
+
+    for (int startId : allNodeIds) {
+        if (visited.count(startId)) continue;
+
+        ClusterInfo cluster;
+        cluster.id = clusterId++;
+
+        // BFS
+        std::queue<int> q;
+        q.push(startId);
+        visited.insert(startId);
+
+        std::unordered_map<std::string, int> tagCounts;
+
+        while (!q.empty()) {
+            int current = q.front();
+            q.pop();
+            cluster.nodeIds.push_back(current);
+
+            // Get tags for this node
+            std::string currentIdStr = std::to_string(current);
+            if (db_.exists(currentIdStr)) {
+                Node currentNode = db_.find(currentIdStr);
+                for (const auto& tag : currentNode.getTags()) {
+                    tagCounts[tag]++;
+                }
+            }
+
+            // Visit neighbors
+            for (int neighbor : adjacency[current]) {
+                if (!visited.count(neighbor)) {
+                    visited.insert(neighbor);
+                    q.push(neighbor);
+                }
+            }
+        }
+
+        // Find shared tags (appearing in more than one node, or all tags if single node)
+        if (cluster.nodeIds.size() == 1) {
+            // Single node - show its tags
+            std::string idStr = std::to_string(cluster.nodeIds[0]);
+            if (db_.exists(idStr)) {
+                cluster.sharedTags = db_.find(idStr).getTags();
+            }
+        } else {
+            // Multiple nodes - show tags that appear in at least 2 nodes
+            for (const auto& [tag, count] : tagCounts) {
+                if (count >= 2) {
+                    cluster.sharedTags.push_back(tag);
+                }
+            }
+        }
+
+        clusters.push_back(cluster);
+    }
+
+    // Sort clusters by size (largest first)
+    std::sort(clusters.begin(), clusters.end(),
+        [](const ClusterInfo& a, const ClusterInfo& b) {
+            return a.nodeIds.size() > b.nodeIds.size();
+        });
+
+    // Reassign IDs after sorting
+    for (size_t i = 0; i < clusters.size(); ++i) {
+        clusters[i].id = static_cast<int>(i + 1);
+    }
+
+    return clusters;
 }
