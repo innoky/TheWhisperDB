@@ -86,7 +86,7 @@ std::optional<std::vector<float>> EmbeddingClient::getEmbedding(const std::strin
         }
 
         if (jsonResponse.contains("error")) {
-            std::cerr << "DeepSeek API error: " << jsonResponse["error"].dump() << std::endl;
+            std::cerr << "OpenAI API error: " << jsonResponse["error"].dump() << std::endl;
         }
 
         return std::nullopt;
@@ -100,7 +100,7 @@ std::vector<std::vector<float>> EmbeddingClient::getEmbeddings(const std::vector
     std::vector<std::vector<float>> results;
     results.reserve(texts.size());
 
-    // DeepSeek API supports batch input
+    // OpenAI API supports batch input
     nlohmann::json requestBody = {
         {"model", model_},
         {"input", texts},
