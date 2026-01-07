@@ -38,13 +38,18 @@ std::string EmbeddingClient::httpPost(const std::string& url, const std::string&
 
     CURLcode res = curl_easy_perform(curl);
 
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
     curl_slist_free_all(headerList);
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
+        std::cerr << "DEBUG CURL error: " << curl_easy_strerror(res) << std::endl;
         throw std::runtime_error(std::string("CURL error: ") + curl_easy_strerror(res));
     }
 
+    std::cerr << "DEBUG HTTP code: " << httpCode << std::endl;
     return response;
 }
 
