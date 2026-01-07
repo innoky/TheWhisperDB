@@ -85,7 +85,8 @@ TagGenerationResult TagService::generateTagsForNode(int nodeId, const std::strin
     db_.updateNode(nodeIdStr, node.to_json());
 
     // Find and link nodes with shared tags
-    result.linkedNodeIds = updateLinksForNode(nodeId);
+    updateLinksForNode(nodeId);
+    result.linkedNodeIds = db_.findNodesWithSharedTags(nodeId);
 
     result.success = true;
     return result;
