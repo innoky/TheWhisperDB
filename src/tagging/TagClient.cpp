@@ -69,25 +69,30 @@ std::string TagClient::buildSystemPrompt(const std::vector<std::string>& existin
                << "1. Output ONLY a JSON array of tag strings, nothing else\n"
                << "2. Use lowercase, hyphenated tags (e.g., \"machine-learning\", \"data-structures\")\n"
                << "3. Generate 3-8 relevant tags for categorizing this document\n"
-               << "4. Tags should be specific enough to be useful for linking similar documents\n\n"
+               << "4. Tags should be broad enough to potentially match other documents on similar topics\n\n"
                << "Example output: [\"algorithms\", \"python\", \"sorting\"]\n";
     } else {
-        prompt << "You are a document tagging assistant.\n\n"
-               << "EXISTING TAG BANK (prefer using these when applicable):\n[";
+        prompt << "You are a document tagging assistant for a knowledge base.\n\n"
+               << "CRITICAL: Documents with SHARED TAGS will be LINKED together. "
+               << "You MUST reuse existing tags when the topic is related!\n\n"
+               << "EXISTING TAG BANK:\n[";
 
         for (size_t i = 0; i < existingTagBank.size(); ++i) {
             prompt << "\"" << existingTagBank[i] << "\"";
             if (i < existingTagBank.size() - 1) prompt << ", ";
         }
         prompt << "]\n\n"
-               << "RULES:\n"
-               << "1. Output ONLY a JSON array of tag strings, nothing else\n"
-               << "2. Use lowercase, hyphenated tags (e.g., \"machine-learning\")\n"
-               << "3. PREFER tags from the existing bank when they fit the document\n"
-               << "4. You may add up to " << maxNewTags_ << " NEW tags if no existing tags are suitable\n"
-               << "5. Generate 3-8 tags total per document\n"
-               << "6. Tags should be specific enough to link similar documents\n\n"
-               << "Example output: [\"algorithms\", \"python\", \"new-topic\"]\n";
+               << "STRICT RULES:\n"
+               << "1. Output ONLY a JSON array of tag strings\n"
+               << "2. You MUST use at least 1-2 tags from the existing bank if ANY are relevant\n"
+               << "3. Only add NEW tags (max " << maxNewTags_ << ") if the topic is completely different\n"
+               << "4. Use lowercase-hyphenated format\n"
+               << "5. Generate 3-6 tags total\n\n"
+               << "EXAMPLES:\n"
+               << "- If document is about 'neural networks' and bank has 'machine-learning' -> USE 'machine-learning'\n"
+               << "- If document is about 'Python pandas' and bank has 'python' -> USE 'python'\n"
+               << "- If document is about 'sorting algorithms' and bank has 'algorithms' -> USE 'algorithms'\n\n"
+               << "Output format: [\"existing-tag\", \"existing-tag2\", \"new-if-needed\"]\n";
     }
 
     return prompt.str();
