@@ -660,18 +660,32 @@ int main()
 
     // ============================================
     // POST /api/tags/link-all - Batch update all tag-based links
+    // Query params: threshold (Jaccard similarity, default: 0.3)
     // ============================================
     endpoint update_tag_links(
-        [](const Request&) -> Response {
+        [](const Request& req) -> Response {
             if (!tagService) {
                 return Response::error("Tag service not initialized. Set DEEPSEEK_API_KEY environment variable.");
             }
 
-            int linksCreated = tagService->updateAllTagBasedLinks();
+            float threshold = 0.3f;
+            if (req.hasQuery("threshold")) {
+                try {
+                    threshold = std::stof(req.getQuery("threshold"));
+                    if (threshold < 0.0f || threshold > 1.0f) {
+                        return Response::badRequest("Threshold must be between 0 and 1");
+                    }
+                } catch (...) {
+                    return Response::badRequest("Invalid threshold parameter");
+                }
+            }
+
+            int linksCreated = tagService->updateAllTagBasedLinks(threshold);
 
             json response;
             response["status"] = "success";
             response["linksCreated"] = linksCreated;
+            response["threshold"] = threshold;
             return Response::ok(response.dump());
         },
         HttpRequest::POST,

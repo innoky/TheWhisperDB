@@ -35,11 +35,11 @@ public:
     // Find nodes by specific tag
     std::vector<int> findNodesByTag(const std::string& tag) const;
 
-    // Update LinkedNodes for a node based on tag overlap
-    int updateLinksForNode(int nodeId);
+    // Update LinkedNodes for a node based on Jaccard similarity
+    int updateLinksForNode(int nodeId, float jaccardThreshold = 0.3f);
 
-    // Batch: update all node links based on tags
-    int updateAllTagBasedLinks();
+    // Batch: update all node links based on Jaccard similarity
+    int updateAllTagBasedLinks(float jaccardThreshold = 0.3f);
 
     // Get all connected components (clusters)
     std::vector<ClusterInfo> getClusters() const;

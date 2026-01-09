@@ -544,3 +544,60 @@ std::vector<int> GraphDB::findNodesWithSharedTags(int nodeId) const {
 
     return result;
 }
+
+float GraphDB::calculateJaccardSimilarity(const std::vector<std::string>& tags1, const std::vector<std::string>& tags2) {
+    if (tags1.empty() || tags2.empty()) {
+        return 0.0f;
+    }
+
+    // Calculate intersection
+    std::vector<std::string> intersection;
+    for (const auto& tag : tags1) {
+        if (std::find(tags2.begin(), tags2.end(), tag) != tags2.end()) {
+            intersection.push_back(tag);
+        }
+    }
+
+    // Calculate union (unique elements from both)
+    std::vector<std::string> unionTags = tags1;
+    for (const auto& tag : tags2) {
+        if (std::find(unionTags.begin(), unionTags.end(), tag) == unionTags.end()) {
+            unionTags.push_back(tag);
+        }
+    }
+
+    if (unionTags.empty()) {
+        return 0.0f;
+    }
+
+    return static_cast<float>(intersection.size()) / static_cast<float>(unionTags.size());
+}
+
+std::vector<int> GraphDB::findNodesWithJaccardSimilarity(int nodeId, float threshold) const {
+    std::vector<int> result;
+    std::string nodeIdStr = std::to_string(nodeId);
+
+    auto it = nodes.find(nodeIdStr);
+    if (it == nodes.end()) {
+        return result;
+    }
+
+    auto nodeTags = it->second->getTags();
+    if (nodeTags.empty()) {
+        return result;
+    }
+
+    for (const auto& [otherId, otherNode] : nodes) {
+        if (otherNode->getId() == nodeId) continue;
+
+        auto otherTags = otherNode->getTags();
+        if (otherTags.empty()) continue;
+
+        float similarity = calculateJaccardSimilarity(nodeTags, otherTags);
+        if (similarity >= threshold) {
+            result.push_back(otherNode->getId());
+        }
+    }
+
+    return result;
+}
