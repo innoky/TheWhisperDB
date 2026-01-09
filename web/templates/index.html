@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TheWhisperDB - Graph Visualization</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Левая панель: управление -->
+        <aside class="sidebar">
+            <h2>TheWhisperDB</h2>
+
+            <!-- Форма добавления узла -->
+            <section class="panel">
+                <h3>Добавить узел</h3>
+                <form id="add-node-form">
+                    <div class="form-group">
+                        <label for="title">Название *</label>
+                        <input type="text" id="title" name="title" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="author">Автор *</label>
+                        <input type="text" id="author" name="author" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="subject">Предмет *</label>
+                        <input type="text" id="subject" name="subject" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="course">Курс</label>
+                        <input type="number" id="course" name="course">
+                    </div>
+                    <div class="form-group">
+                        <label for="description">Описание</label>
+                        <textarea id="description" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="tags">Теги (через запятую)</label>
+                        <input type="text" id="tags" name="tags" placeholder="тег1, тег2, тег3">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Добавить</button>
+                </form>
+            </section>
+
+            <!-- Перерасчет связей -->
+            <section class="panel">
+                <h3>Связи</h3>
+                <button id="btn-cluster-embeddings" class="btn btn-secondary">
+                    Перерасчет (эмбеддинги)
+                </button>
+                <button id="btn-cluster-tags" class="btn btn-secondary">
+                    Перерасчет (теги)
+                </button>
+            </section>
+
+            <!-- Статистика -->
+            <section class="panel">
+                <h3>Статистика</h3>
+                <div id="stats">
+                    <p>Узлов: <span id="node-count">0</span></p>
+                    <p>Связей: <span id="link-count">0</span></p>
+                </div>
+            </section>
+        </aside>
+
+        <!-- Центр: граф -->
+        <main class="graph-container">
+            <svg id="graph"></svg>
+            <div id="loading" class="loading hidden">Загрузка...</div>
+        </main>
+
+        <!-- Правая панель: информация о выбранном узле -->
+        <aside class="info-panel">
+            <h3>Информация об узле</h3>
+            <div id="node-info">
+                <p class="placeholder">Выберите узел на графе</p>
+            </div>
+            <div id="node-actions" class="hidden">
+                <button id="btn-delete-node" class="btn btn-danger">Удалить узел</button>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Уведомления -->
+    <div id="notifications"></div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
