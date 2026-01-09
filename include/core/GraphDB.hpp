@@ -48,6 +48,8 @@ public:
     void addToTagBank(const std::vector<std::string>& newTags);
     std::vector<int> findNodesByTag(const std::string& tag) const;
     std::vector<int> findNodesWithSharedTags(int nodeId) const;
+    std::vector<int> findNodesWithJaccardSimilarity(int nodeId, float threshold = 0.3f) const;
+    static float calculateJaccardSimilarity(const std::vector<std::string>& tags1, const std::vector<std::string>& tags2);
     
     // File operations
     std::string addFileToNode(const std::string& nodeId, const std::string& filename, const std::string& content);

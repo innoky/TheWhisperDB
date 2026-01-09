@@ -86,9 +86,9 @@ TagGenerationResult TagService::generateTagsForNode(int nodeId, const std::strin
     node.setTags(result.generatedTags);
     db_.updateNode(nodeIdStr, node.to_json());
 
-    // Find and link nodes with shared tags
-    updateLinksForNode(nodeId);
-    result.linkedNodeIds = db_.findNodesWithSharedTags(nodeId);
+    // Find and link nodes with Jaccard similarity >= 0.3
+    updateLinksForNode(nodeId, 0.3f);
+    result.linkedNodeIds = db_.findNodesWithJaccardSimilarity(nodeId, 0.3f);
 
     result.success = true;
     return result;
@@ -133,11 +133,11 @@ void TagService::addBidirectionalLink(int nodeId1, int nodeId2) {
     }
 }
 
-int TagService::updateLinksForNode(int nodeId) {
-    auto sharedNodes = db_.findNodesWithSharedTags(nodeId);
+int TagService::updateLinksForNode(int nodeId, float jaccardThreshold) {
+    auto similarNodes = db_.findNodesWithJaccardSimilarity(nodeId, jaccardThreshold);
     int linksCreated = 0;
 
-    for (int otherId : sharedNodes) {
+    for (int otherId : similarNodes) {
         // Check if link already exists
         std::string nodeIdStr = std::to_string(nodeId);
         Node node = db_.find(nodeIdStr);
@@ -152,14 +152,14 @@ int TagService::updateLinksForNode(int nodeId) {
     return linksCreated;
 }
 
-int TagService::updateAllTagBasedLinks() {
+int TagService::updateAllTagBasedLinks(float jaccardThreshold) {
     int totalLinks = 0;
     auto allNodes = db_.getAllNodes();
 
     for (const auto& nodeJson : allNodes) {
         Node node(nodeJson);
         if (!node.getTags().empty()) {
-            totalLinks += updateLinksForNode(node.getId());
+            totalLinks += updateLinksForNode(node.getId(), jaccardThreshold);
         }
     }
 
