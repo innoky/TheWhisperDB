@@ -45,6 +45,9 @@ function setupEventListeners() {
 
     // Кнопка связывания по тегам
     document.getElementById('btn-link-by-tags').addEventListener('click', handleLinkByTags);
+
+    // Кнопка генерации тегов через AI
+    document.getElementById('btn-generate-tags').addEventListener('click', handleGenerateTags);
 }
 
 // Инициализация графа D3.js
@@ -622,6 +625,39 @@ async function loadNodeFiles() {
         } catch (error) {
             node.files = [];
         }
+    }
+}
+
+// Генерация тегов через DeepSeek API
+async function handleGenerateTags() {
+    if (!selectedNode) return;
+
+    notify('Генерация тегов...', 'info');
+
+    try {
+        const response = await fetch(`${API_BASE}/api/nodes/${selectedNode.id}/tags`, {
+            method: 'POST'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to generate tags');
+        }
+
+        const result = await response.json();
+        const tags = result.tags || [];
+        notify(`Теги сгенерированы: ${tags.join(', ')}`, 'success');
+
+        await loadNodes();
+
+        // Обновить выбранный узел
+        const updatedNode = graphData.nodes.find(n => n.id === selectedNode.id);
+        if (updatedNode) {
+            selectNode(updatedNode);
+        }
+    } catch (error) {
+        console.error('Error generating tags:', error);
+        notify(`Ошибка: ${error.message}`, 'error');
     }
 }
 
