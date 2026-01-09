@@ -1,5 +1,5 @@
-// API базовый URL (C++ сервер)
-const API_BASE = 'http://localhost:8080';
+// API базовый URL (через Flask-прокси)
+const API_BASE = '';
 
 // Состояние приложения
 let graphData = { nodes: [], links: [] };
