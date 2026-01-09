@@ -39,6 +39,9 @@ function setupEventListeners() {
 
     // Кнопка удаления узла
     document.getElementById('btn-delete-node').addEventListener('click', handleDeleteNode);
+
+    // Кнопка загрузки файлов к узлу
+    document.getElementById('btn-upload-files').addEventListener('click', handleUploadFiles);
 }
 
 // Инициализация графа D3.js
@@ -97,8 +100,12 @@ async function loadNodes() {
             description: node.description,
             date: node.date,
             tags: node.tags || [],
-            linkedNodes: node.LinkedNodes || []
+            linkedNodes: node.LinkedNodes || [],
+            storagePath: node.storage_path || null
         }));
+
+        // Загрузить файлы для каждого узла
+        await loadNodeFiles();
 
         // Построение связей
         graphData.links = [];
@@ -314,6 +321,21 @@ function showNodeInfo(node) {
         `;
     }
 
+    // Файлы узла
+    if (node.files && node.files.length > 0) {
+        const filesList = node.files.map(filePath => {
+            const fileName = filePath.split('/').pop();
+            return `<div class="file-item"><span class="file-name">${escapeHtml(fileName)}</span></div>`;
+        }).join('');
+
+        html += `
+            <div class="info-row">
+                <div class="info-label">Файлы (${node.files.length})</div>
+                <div class="files-list">${filesList}</div>
+            </div>
+        `;
+    }
+
     nodeInfo.innerHTML = html;
 
     // Обработчики кликов на связанные узлы
@@ -366,33 +388,51 @@ async function handleAddNode(event) {
     event.preventDefault();
 
     const form = event.target;
-    const formData = new FormData(form);
+    const fileInput = document.getElementById('files');
+    const files = fileInput.files;
 
     const nodeData = {
-        title: formData.get('title'),
-        author: formData.get('author'),
-        subject: formData.get('subject')
+        title: form.title.value,
+        author: form.author.value,
+        subject: form.subject.value
     };
 
-    const course = formData.get('course');
+    const course = form.course.value;
     if (course) nodeData.course = parseInt(course);
 
-    const description = formData.get('description');
+    const description = form.description.value;
     if (description) nodeData.description = description;
 
-    const tagsStr = formData.get('tags');
+    const tagsStr = form.tags.value;
     if (tagsStr) {
         nodeData.tags = tagsStr.split(',').map(t => t.trim()).filter(Boolean);
     }
 
     try {
-        const response = await fetch(`${API_BASE}/api/nodes`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(nodeData)
-        });
+        let response;
+
+        if (files.length > 0) {
+            // Используем multipart/form-data для загрузки с файлами
+            const formData = new FormData();
+            formData.append('metadata', JSON.stringify(nodeData));
+            for (let i = 0; i < files.length; i++) {
+                formData.append('files', files[i]);
+            }
+
+            response = await fetch(`${API_BASE}/api/nodes`, {
+                method: 'POST',
+                body: formData
+            });
+        } else {
+            // Простой JSON без файлов
+            response = await fetch(`${API_BASE}/api/nodes`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(nodeData)
+            });
+        }
 
         if (!response.ok) {
             const error = await response.json();
@@ -499,4 +539,66 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Загрузка списка файлов для всех узлов
+async function loadNodeFiles() {
+    for (const node of graphData.nodes) {
+        try {
+            const response = await fetch(`${API_BASE}/api/nodes/${node.id}/files`);
+            if (response.ok) {
+                const data = await response.json();
+                node.files = data.files || [];
+            } else {
+                node.files = [];
+            }
+        } catch (error) {
+            node.files = [];
+        }
+    }
+}
+
+// Загрузка файлов к существующему узлу
+async function handleUploadFiles() {
+    if (!selectedNode) return;
+
+    const fileInput = document.getElementById('node-files');
+    const files = fileInput.files;
+
+    if (files.length === 0) {
+        notify('Выберите файлы для загрузки', 'error');
+        return;
+    }
+
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/api/nodes/${selectedNode.id}/files`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to upload files');
+        }
+
+        const result = await response.json();
+        notify(`Загружено файлов: ${result.uploaded || files.length}`, 'success');
+
+        fileInput.value = '';
+        await loadNodes();
+
+        // Обновить выбранный узел
+        const updatedNode = graphData.nodes.find(n => n.id === selectedNode.id);
+        if (updatedNode) {
+            selectNode(updatedNode);
+        }
+    } catch (error) {
+        console.error('Error uploading files:', error);
+        notify(`Ошибка загрузки: ${error.message}`, 'error');
+    }
 }

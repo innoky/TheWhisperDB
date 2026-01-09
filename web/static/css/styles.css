@@ -338,3 +338,81 @@ body {
     max-width: 250px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
+
+/* Загрузка файлов */
+.file-upload-section {
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #0f3460;
+}
+
+.file-upload-section label {
+    display: block;
+    font-size: 0.85rem;
+    color: #aaa;
+    margin-bottom: 8px;
+}
+
+.file-upload-section input[type="file"] {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+    color: #eee;
+}
+
+.file-upload-section input[type="file"]::file-selector-button {
+    background-color: #0f3460;
+    color: #eee;
+    border: 1px solid #e94560;
+    border-radius: 4px;
+    padding: 6px 12px;
+    cursor: pointer;
+    margin-right: 10px;
+}
+
+.file-upload-section input[type="file"]::file-selector-button:hover {
+    background-color: #1a4a7a;
+}
+
+/* Список файлов узла */
+#node-info .files-list {
+    margin-top: 5px;
+}
+
+#node-info .file-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 0.85rem;
+}
+
+#node-info .file-name {
+    color: #4db8ff;
+    word-break: break-all;
+}
+
+#node-info .file-icon {
+    margin-right: 5px;
+}
+
+/* Input file в форме */
+.form-group input[type="file"] {
+    padding: 8px;
+    font-size: 0.85rem;
+}
+
+.form-group input[type="file"]::file-selector-button {
+    background-color: #0f3460;
+    color: #eee;
+    border: 1px solid #e94560;
+    border-radius: 4px;
+    padding: 6px 12px;
+    cursor: pointer;
+    margin-right: 10px;
+}
+
+.form-group input[type="file"]::file-selector-button:hover {
+    background-color: #1a4a7a;
+}
