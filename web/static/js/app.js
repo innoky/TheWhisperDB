@@ -42,6 +42,9 @@ function setupEventListeners() {
 
     // Кнопка загрузки файлов к узлу
     document.getElementById('btn-upload-files').addEventListener('click', handleUploadFiles);
+
+    // Кнопка связывания по тегам
+    document.getElementById('btn-link-by-tags').addEventListener('click', handleLinkByTags);
 }
 
 // Инициализация графа D3.js
@@ -476,11 +479,16 @@ async function handleDeleteNode() {
 
 // Перерасчет связей
 async function recalculateLinks(method) {
-    const endpoint = method === 'embeddings' ? '/api/cluster' : '/api/tags/link-all';
-    const methodName = method === 'embeddings' ? 'эмбеддингам' : 'тегам';
+    if (method === 'tags') {
+        // Перерасчет по тегам на фронтенде
+        await recalculateLinksByTagsFrontend();
+        return;
+    }
 
+    // Эмбеддинги — через API
+    const endpoint = '/api/cluster';
     showLoading(true);
-    notify(`Перерасчет по ${methodName}...`, 'info');
+    notify('Перерасчет по эмбеддингам...', 'info');
 
     try {
         const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -492,12 +500,71 @@ async function recalculateLinks(method) {
             throw new Error(error.error || 'Failed to recalculate');
         }
 
-        const result = await response.json();
-        notify(`Связи пересчитаны`, 'success');
-
+        notify('Связи пересчитаны', 'success');
         await loadNodes();
     } catch (error) {
         console.error('Error recalculating links:', error);
+        notify(`Ошибка: ${error.message}`, 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+
+// Перерасчет всех связей по тегам на фронтенде
+async function recalculateLinksByTagsFrontend() {
+    showLoading(true);
+    notify('Перерасчет по тегам...', 'info');
+
+    try {
+        let totalLinksCreated = 0;
+
+        // Строим карту: тег -> список узлов с этим тегом
+        const tagToNodes = new Map();
+        for (const node of graphData.nodes) {
+            const tags = node.tags || [];
+            for (const tag of tags) {
+                if (!tagToNodes.has(tag)) {
+                    tagToNodes.set(tag, []);
+                }
+                tagToNodes.get(tag).push(node.id);
+            }
+        }
+
+        // Для каждого узла находим связи по тегам
+        for (const node of graphData.nodes) {
+            const nodeTags = node.tags || [];
+            if (nodeTags.length === 0) continue;
+
+            const currentLinks = new Set(node.linkedNodes || []);
+            const newLinksToAdd = new Set();
+
+            // Находим все узлы с общими тегами
+            for (const tag of nodeTags) {
+                const nodesWithTag = tagToNodes.get(tag) || [];
+                for (const otherId of nodesWithTag) {
+                    if (otherId !== node.id && !currentLinks.has(otherId)) {
+                        newLinksToAdd.add(otherId);
+                    }
+                }
+            }
+
+            if (newLinksToAdd.size === 0) continue;
+
+            // Обновляем связи узла
+            const updatedLinks = [...currentLinks, ...newLinksToAdd];
+            await fetch(`${API_BASE}/api/nodes/${node.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ LinkedNodes: updatedLinks })
+            });
+
+            totalLinksCreated += newLinksToAdd.size;
+        }
+
+        notify(`Создано связей: ${totalLinksCreated}`, 'success');
+        await loadNodes();
+    } catch (error) {
+        console.error('Error recalculating links by tags:', error);
         notify(`Ошибка: ${error.message}`, 'error');
     } finally {
         showLoading(false);
@@ -555,6 +622,84 @@ async function loadNodeFiles() {
         } catch (error) {
             node.files = [];
         }
+    }
+}
+
+// Связывание узла по тегам (на фронтенде)
+async function handleLinkByTags() {
+    if (!selectedNode) return;
+
+    const nodeTags = selectedNode.tags || [];
+    if (nodeTags.length === 0) {
+        notify('У узла нет тегов для связывания', 'error');
+        return;
+    }
+
+    // Найти узлы с общими тегами
+    const nodesToLink = [];
+    for (const otherNode of graphData.nodes) {
+        if (otherNode.id === selectedNode.id) continue;
+
+        const otherTags = otherNode.tags || [];
+        const commonTags = nodeTags.filter(tag => otherTags.includes(tag));
+
+        if (commonTags.length > 0) {
+            nodesToLink.push(otherNode.id);
+        }
+    }
+
+    if (nodesToLink.length === 0) {
+        notify('Не найдено узлов с общими тегами', 'info');
+        return;
+    }
+
+    // Объединить существующие и новые связи
+    const currentLinks = selectedNode.linkedNodes || [];
+    const newLinks = [...new Set([...currentLinks, ...nodesToLink])];
+
+    try {
+        // Обновить текущий узел
+        const response = await fetch(`${API_BASE}/api/nodes/${selectedNode.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ LinkedNodes: newLinks })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to update node links');
+        }
+
+        // Обновить обратные связи (двунаправленные)
+        for (const otherId of nodesToLink) {
+            if (currentLinks.includes(otherId)) continue; // уже связаны
+
+            const otherNode = graphData.nodes.find(n => n.id === otherId);
+            if (!otherNode) continue;
+
+            const otherLinks = otherNode.linkedNodes || [];
+            if (!otherLinks.includes(selectedNode.id)) {
+                const updatedOtherLinks = [...otherLinks, selectedNode.id];
+                await fetch(`${API_BASE}/api/nodes/${otherId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ LinkedNodes: updatedOtherLinks })
+                });
+            }
+        }
+
+        const addedCount = nodesToLink.filter(id => !currentLinks.includes(id)).length;
+        notify(`Связано узлов: ${addedCount}`, 'success');
+
+        await loadNodes();
+
+        // Обновить выбранный узел
+        const updatedNode = graphData.nodes.find(n => n.id === selectedNode.id);
+        if (updatedNode) {
+            selectNode(updatedNode);
+        }
+    } catch (error) {
+        console.error('Error linking by tags:', error);
+        notify(`Ошибка: ${error.message}`, 'error');
     }
 }
 
