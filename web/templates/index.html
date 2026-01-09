@@ -41,6 +41,10 @@
                         <label for="tags">Теги (через запятую)</label>
                         <input type="text" id="tags" name="tags" placeholder="тег1, тег2, тег3">
                     </div>
+                    <div class="form-group">
+                        <label for="files">Файлы</label>
+                        <input type="file" id="files" name="files" multiple>
+                    </div>
                     <button type="submit" class="btn btn-primary">Добавить</button>
                 </form>
             </section>
@@ -79,6 +83,12 @@
                 <p class="placeholder">Выберите узел на графе</p>
             </div>
             <div id="node-actions" class="hidden">
+                <!-- Загрузка файлов к узлу -->
+                <div class="file-upload-section">
+                    <label for="node-files">Добавить файлы</label>
+                    <input type="file" id="node-files" multiple>
+                    <button id="btn-upload-files" class="btn btn-secondary">Загрузить</button>
+                </div>
                 <button id="btn-delete-node" class="btn btn-danger">Удалить узел</button>
             </div>
         </aside>
